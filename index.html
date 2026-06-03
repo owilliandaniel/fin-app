@@ -248,7 +248,14 @@ async function deleteRow(id){
 async function loadRemote(){
   if(CFG.demoMode||!CFG.scriptUrl){loadLocal();initApp();return;}
   setSd('syncing');
-  var res=await callScript({action:'read'});
+  var base=CFG.scriptUrl.split('?')[0];
+  var res=null;
+  try{
+    var r=await fetch(base+'?data='+encodeURIComponent(JSON.stringify({action:'read'})),{method:'GET',redirect:'follow'});
+    var txt=await r.text();
+    try{res=JSON.parse(txt);}catch(e){}
+  }catch(e){}
+  if(!res)res=await callScript({action:'read'});
   if(res&&res.ok&&res.rows){
     ST.months.forEach(function(m){m.entries=[];});
     res.rows.forEach(function(row){
