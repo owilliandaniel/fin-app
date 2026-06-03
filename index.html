@@ -220,16 +220,8 @@ async function callScript(params){
   if(CFG.demoMode||!CFG.scriptUrl){saveLocal();return null;}
   setSd('syncing');
   try{
-    // Step 1: follow redirect to get the real URL
     var base=CFG.scriptUrl.split('?')[0];
-    var finalUrl=CFG._resolvedUrl||null;
-    if(!finalUrl){
-      var probe=await fetch(base,{method:'GET',redirect:'follow'});
-      finalUrl=probe.url; // URL after redirect
-      CFG._resolvedUrl=finalUrl;
-    }
-    // Step 2: POST JSON to the resolved URL (no more redirects)
-    var r=await fetch(finalUrl,{
+    var r=await fetch(base,{
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
       body:JSON.stringify(params),
