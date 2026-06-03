@@ -256,8 +256,12 @@ async function loadRemote(){
       var mi=ML.indexOf(row.month);if(mi<0)return;
       ST.months[mi].entries.push({id:row.id||String(Date.now()),date:row.date,label:row.label,category:{name:row.category,color:catCol(row.category)},amount:parseFloat(row.amount)||0,ts:row.date});
     });
+    // só carrega income/fixos do local, sem sobrescrever entries remotos
+    ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(d.income!=null)m.income=d.income;if(d.fixed)m.fixed=d.fixed;}});
+  } else {
+    loadLocal();
   }
-  loadLocal();setSd('ok');initApp();
+  setSd('ok');initApp();
 }
 function fmt(v){return'R$\u00a0'+Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function fmtK(v){if(Math.abs(v)>=1000)return'R$\u00a0'+(Math.abs(v)/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'k';return fmt(v);}
