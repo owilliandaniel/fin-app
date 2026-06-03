@@ -228,8 +228,9 @@ async function callScript(params){
       redirect:'follow'
     });
     var txt=await r.text();
+    if(!r.ok&&r.status!==0){setSd('err');showToast('Erro ao salvar ('+r.status+')');saveLocal();return null;}
     setSd('ok');
-    try{return JSON.parse(txt);}catch(e){return{ok:true};}
+    try{return JSON.parse(txt);}catch(e){if(txt&&txt.length>0){setSd('err');showToast('Sem conexão — salvo localmente');saveLocal();return null;}return{ok:true};}
   }catch(e){setSd('err');showToast('Sem conexão — salvo localmente');saveLocal();return null;}
 }
 
