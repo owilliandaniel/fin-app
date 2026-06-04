@@ -240,7 +240,13 @@ function defCards(){return[
 ];}
 function loadCards(){var s=localStorage.getItem('fin_cards');try{CARDS=s?JSON.parse(s):defCards();}catch(e){CARDS=defCards();}}
 function saveCards(){localStorage.setItem('fin_cards',JSON.stringify(CARDS));}
-function cardLivre(c){return c.limite-c.ocupado-c.parcelas;}
+// parcelas a vencer são calculadas pelos itens + mês atual, então diminuem sozinhas a cada mês
+var MN3=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+function mlBase(){var p=ML[0].split('/');return parseInt(p[1])*12+MN3.indexOf(p[0]);}
+function curMiNow(){var t=new Date();return t.getFullYear()*12+t.getMonth()-mlBase();}
+function itemRemaining(it){var n=it.n||1;var sm=it.startMi!=null?it.startMi:0;var paid=Math.max(0,curMiNow()-sm);return Math.max(0,Math.min(n,n-paid));}
+function cardParcelas(c){return(c.items||[]).reduce(function(s,it){return it.kind==='parc'?s+itemRemaining(it)*it.per:s;},0);}
+function cardLivre(c){return c.limite-c.ocupado-cardParcelas(c);}
 function cardKey(name){var b=name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'').slice(0,20)||'cartao';var k=b,i=2;while(CARDS.some(function(c){return c.key===k;})){k=b+i;i++;}return k;}
 function findCard(txt){var l=String(txt).toLowerCase();for(var i=0;i<CARDS.length;i++){if(l.indexOf(CARDS[i].name.toLowerCase())>=0||l.indexOf(CARDS[i].key)>=0)return CARDS[i];}return null;}
 
@@ -531,13 +537,12 @@ async function send(){
       }
       saveLocal();
       instReply='📋 '+label+' parcelado em '+inst.n+'x de '+fmt(per)+' (total '+fmt(inst.total)+') nos Gastos fixos.\n'+made+' parcela(s) a partir de '+cur().label+'.';
-      // se foi num cartão, também registra na lista do cartão e no limite
+      // se foi num cartão, também registra na lista do cartão (parcelas diminuem sozinhas com o tempo)
       if(card){
         card.items=card.items||[];
-        card.parcelas+=inst.total;
-        card.items.push({id:Date.now(),desc:label,per:inst.per,n:inst.n,total:inst.total,kind:'parc',date:toDay()});
+        card.items.push({id:Date.now(),desc:label,per:inst.per,n:inst.n,total:inst.total,kind:'parc',startMi:ST.mi,date:toDay()});
         syncCard(card);
-        instReply+='\n💳 '+card.name+': +'+fmt(inst.total)+' em parcelas. Livre: '+fmt(cardLivre(card));
+        instReply+='\n💳 '+card.name+': +'+fmt(inst.total)+' em '+inst.n+'x. Livre: '+fmt(cardLivre(card));
       }
     }else if(card){
       // à vista no CARTÃO: vai pro cartão (ocupado), não vira gasto variável do mês
@@ -698,7 +703,7 @@ function renderCartoes(){
   var html='<div style="font-size:11px;color:#9CA3AF;margin:2px 4px 10px">Livre = Limite − Ocupado − Parcelas a vencer</div>';
   CARDS.forEach(function(c){
     var livre=cardLivre(c);
-    var pctUsed=c.limite>0?Math.min(100,(c.ocupado+c.parcelas)/c.limite*100):0;
+    var pctUsed=c.limite>0?Math.min(100,(c.ocupado+cardParcelas(c))/c.limite*100):0;
     var col=pctUsed>85?'#EF4444':pctUsed>60?'#F59E0B':'#10B981';
     html+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">💳 '+c.name+'</div>';
     if(ST.eCard===c.key)html+='<button class="btn-x" onmousedown="event.preventDefault()" onclick="canCard()">✕</button>';
@@ -708,7 +713,7 @@ function renderCartoes(){
       html+='<div style="display:flex;flex-direction:column;gap:8px">'
         +cardField('Limite total','cl-'+c.key,c.limite)
         +cardField('Ocupado (fatura/uso atual)','co-'+c.key,c.ocupado)
-        +cardField('Parcelas a vencer','cp-'+c.key,c.parcelas)
+        +'<div style="font-size:10px;color:#9CA3AF">Parcelas a vencer ('+fmt(cardParcelas(c))+') são calculadas pelas compras parceladas.</div>'
         +'<button class="btn-ok" style="align-self:flex-end;padding:6px 18px" onmousedown="event.preventDefault()" onclick="svCard(\''+c.key+'\')">Salvar</button></div>';
     }else{
       html+='<div class="mono" style="font-size:22px;font-weight:700;color:'+col+'">'+fmt(livre)+'<span style="font-size:11px;color:#9CA3AF;font-weight:400"> livre</span></div>';
@@ -716,13 +721,15 @@ function renderCartoes(){
       html+='<div style="display:flex;justify-content:space-between;font-size:11px;color:#9CA3AF">'
         +'<span>Limite '+fmt(c.limite)+'</span>'
         +'<span style="color:#EF4444">Ocupado '+fmt(c.ocupado)+'</span>'
-        +'<span style="color:#F59E0B">Parcelas '+fmt(c.parcelas)+'</span></div>';
+        +'<span style="color:#F59E0B">Parcelas '+fmt(cardParcelas(c))+'</span></div>';
       var its=c.items||[];
       if(its.length){
         html+='<div style="margin-top:10px;border-top:.5px solid #F3F4F6;padding-top:6px"><div style="font-size:10px;color:#9CA3AF;margin-bottom:4px">Compras ('+its.length+')</div>';
         its.forEach(function(it){
           var val=it.n>1?(fmt(it.per)+' × '+it.n+' = '+fmt(it.total)):fmt(it.total);
-          html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:.5px dashed #F3F4F6"><span style="font-size:12px;color:#374151">'+it.desc+(it.n>1?' <span style="color:#F59E0B;font-size:10px">'+it.n+'x</span>':'')+'</span><span style="display:flex;align-items:center;gap:8px"><span class="mono" style="font-size:11px;color:#9CA3AF">'+val+'</span><button class="btn-del" onclick="dlCardItem(\''+c.key+'\',\''+it.id+'\')">✕</button></span></div>';
+          var rem=it.kind==='parc'?itemRemaining(it):0;
+          var tag=it.n>1?' <span style="color:#F59E0B;font-size:10px">'+it.n+'x'+(rem>0?' · faltam '+rem:' · quitado ✓')+'</span>':'';
+          html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:.5px dashed #F3F4F6"><span style="font-size:12px;color:#374151">'+it.desc+tag+'</span><span style="display:flex;align-items:center;gap:8px"><span class="mono" style="font-size:11px;color:#9CA3AF">'+val+'</span><button class="btn-del" onclick="dlCardItem(\''+c.key+'\',\''+it.id+'\')">✕</button></span></div>';
         });
         html+='</div>';
       }
@@ -762,14 +769,14 @@ function canCard(){ST.eCard=null;renderCartoes();}
 function svCard(key){
   var c=CARDS.find(function(x){return x.key===key;});if(!c)return;
   var gl=function(p){var el=document.getElementById(p+'-'+key);return el?pAmt(el.value):0;};
-  c.limite=gl('cl');c.ocupado=gl('co');c.parcelas=gl('cp');
+  c.limite=gl('cl');c.ocupado=gl('co');
   ST.eCard=null;syncCard(c);renderCartoes();showToast('Cartão atualizado ✓');
 }
 function dlCardItem(key,id){
   var c=CARDS.find(function(x){return x.key===key;});if(!c||!c.items)return;
   var it=c.items.find(function(x){return String(x.id)===String(id);});if(!it)return;
-  if(it.kind==='parc')c.parcelas=Math.max(0,Math.round((c.parcelas-it.total)*100)/100);
-  else c.ocupado=Math.max(0,Math.round((c.ocupado-it.total)*100)/100);
+  // parc: parcelas recalculam pelos itens; vista: tira do ocupado
+  if(it.kind!=='parc')c.ocupado=Math.max(0,Math.round((c.ocupado-it.total)*100)/100);
   c.items=c.items.filter(function(x){return String(x.id)!==String(id);});
   syncCard(c);renderCartoes();
 }
