@@ -439,15 +439,32 @@ async function send(){
   await new Promise(function(r){setTimeout(r,350);});hideTyping();
   var parsed=pMsg(text),newE=null,cardMsg='';
   if(parsed){
-    newE=Object.assign({},parsed,{id:Date.now(),date:toDay(),ts:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
-    cur().entries.push(newE);appendRow(newE,cur().label);
-    // cartão: aplica em Ocupado (à vista) ou Parcelas a vencer (parcelado)
     var card=findCard(text);
-    if(card){
-      var parc=/\b\d+\s*x\b|parcel|vezes/i.test(text);
-      if(parc)card.parcelas+=newE.amount;else card.ocupado+=newE.amount;
-      saveCards();
-      cardMsg='\n\n💳 '+card.name+': '+(parc?'+'+fmt(newE.amount)+' em parcelas':'+'+fmt(newE.amount)+' ocupado')+'.\nLivre no cartão: '+fmt(cardLivre(card))+'.';
+    var nm=text.match(/(\d+)\s*x\b/i)||text.match(/em\s+(\d+)\s*(?:vezes|parcelas)/i);
+    var nInst=nm?parseInt(nm[1]):1;
+    var now=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    if(nInst>1&&!card){
+      // parcelado FORA do cartão: divide o total em parcelas, uma por mês
+      var per=Math.round(parsed.amount/nInst*100)/100;
+      var first=Math.round((parsed.amount-per*(nInst-1))*100)/100;
+      var made=0;
+      for(var k=0;k<nInst;k++){
+        var tmi=ST.mi+k;if(tmi>=ST.months.length)break;
+        var pe=Object.assign({},parsed,{amount:k===0?first:per,label:parsed.label+' ('+(k+1)+'/'+nInst+')',id:Date.now()+k,date:k===0?toDay():'',ts:k===0?now:''});
+        ST.months[tmi].entries.push(pe);appendRow(pe,ML[tmi]);made++;
+        if(k===0)newE=pe;
+      }
+      cardMsg='\n\n🧾 Parcelado: '+nInst+'x de '+fmt(per)+' lançado em '+made+' mês(es), a partir de '+cur().label+'.';
+    }else{
+      newE=Object.assign({},parsed,{id:Date.now(),date:toDay(),ts:now});
+      cur().entries.push(newE);appendRow(newE,cur().label);
+      // cartão: aplica em Ocupado (à vista) ou Parcelas a vencer (parcelado)
+      if(card){
+        var parc=/\b\d+\s*x\b|parcel|vezes/i.test(text);
+        if(parc)card.parcelas+=newE.amount;else card.ocupado+=newE.amount;
+        saveCards();
+        cardMsg='\n\n💳 '+card.name+': '+(parc?'+'+fmt(newE.amount)+' em parcelas':'+'+fmt(newE.amount)+' ocupado')+'.\nLivre no cartão: '+fmt(cardLivre(card))+'.';
+      }
     }
     if(ST.panel!=='chat')renderPanel();
   }
@@ -460,7 +477,7 @@ async function send(){
     reply=em+' '+cur().label+':\n\nOrçamento: '+(c.bv!=null?fmt(c.bv):'sem salário')+'\nGasto: '+fmt(c.sp)+'\nLivre: '+(c.rem!=null?fmt(c.rem):'—')+'\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.';
   }else if(low.match(/por dia|diário/)){reply='📅 '+(c.rem!=null?fmt(c.rem):'—')+' ÷ '+c.dl+' dias = '+fmt(c.day)+'/dia.';}
   else if(low.match(/oi|olá|ola|bom dia|boa tarde|hey/)){reply='Oi! 👋 Em '+cur().label+': '+(cur().income>0?'livre '+fmt(c.rem):'salário não lançado ainda')+'.';}
-  else if(low.match(/ajuda|help/)){reply='💬 "gastei 50 no mercado"\n"paguei 120 uber"\n"quanto posso gastar?"\n"resumo do mês"';}
+  else if(low.match(/ajuda|help/)){reply='💬 "gastei 50 no mercado"\n"gastei 300 em 3x no mercado" (parcela nos meses)\n"gastei 80 no cartão santander"\n"quanto posso gastar?"';}
   else{reply='Não entendi 🤔 Tente: "gastei 80 de delivery"\nOu: "quanto posso gastar?"';}
   addMsg('bot',reply);updHdr();
 }
