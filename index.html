@@ -234,12 +234,19 @@ function scriptUrl(params){
   return base+'?data='+encodeURIComponent(JSON.stringify(params));
 }
 
+// fetch com timeout — iOS Safari pode pendurar requisições cross-site pra sempre (ITP)
+function fetchT(url,opts,ms){
+  opts=opts||{};ms=ms||12000;
+  var ctrl=new AbortController();
+  var t=setTimeout(function(){ctrl.abort();},ms);
+  return fetch(url,Object.assign({},opts,{signal:ctrl.signal})).finally(function(){clearTimeout(t);});
+}
 async function callScript(params){
   if(CFG.demoMode||!CFG.scriptUrl){saveLocal();return null;}
   setSd('syncing');
   try{
     var base=CFG.scriptUrl.split('?')[0];
-    var r=await fetch(base,{
+    var r=await fetchT(base,{
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
       body:JSON.stringify(params),
@@ -296,7 +303,7 @@ async function loadRemote(){
   var base=CFG.scriptUrl.split('?')[0];
   var res=null;
   try{
-    var r=await fetch(base+'?data='+encodeURIComponent(JSON.stringify({action:'read'}))+'&_='+Date.now(),{method:'GET',redirect:'follow',cache:'no-store'});
+    var r=await fetchT(base+'?data='+encodeURIComponent(JSON.stringify({action:'read'}))+'&_='+Date.now(),{method:'GET',redirect:'follow',cache:'no-store'});
     var txt=await r.text();
     try{res=JSON.parse(txt);}catch(e){}
   }catch(e){}
