@@ -269,8 +269,26 @@ async function deleteRow(id){
   callScript({action:'delete',id:String(id)});
 }
 
+function parseMiFromRow(row){
+  // tenta normMonth no campo mês
+  var mi=ML.indexOf(normMonth(row.month));
+  if(mi>=0)return mi;
+  // fallback ISO na data: "2026-06-04T..." → Jun/2026
+  if(row.date){
+    var dateStr=String(row.date);
+    var iso=dateStr.match(/^\d{4}-(\d{2})/);
+    var br=dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    var mn=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    if(iso)mi=ML.indexOf(mn[parseInt(iso[1])]+'/'+dateStr.slice(0,4));
+    if(mi<0&&br)mi=ML.indexOf(mn[parseInt(br[2])]+'/'+br[3]);
+  }
+  return mi;
+}
+
 async function loadRemote(){
   if(CFG.demoMode||!CFG.scriptUrl){loadLocal();initApp();return;}
+  // offline-first: mostra localStorage imediatamente, sincroniza planilha em background
+  loadLocal();initApp();
   setSd('syncing');
   var base=CFG.scriptUrl.split('?')[0];
   var res=null;
@@ -281,30 +299,37 @@ async function loadRemote(){
   }catch(e){}
   if(!res)res=await callScript({action:'read'});
   if(res&&res.ok&&res.rows){
-    ST.months.forEach(function(m){m.entries=[];});
+    // constrói mapa de entradas do sheet por id
+    var sheetEntryIds=new Set();
+    var sheetIncome={};
+    var sheetEntries={};
     res.rows.forEach(function(row){
       if(!row.label||!row.amount)return;
-      // sentinel de salário: usa o ID para achar o mês — imune ao Sheets auto-formatar
-      // o campo mês como data (ex: "Jun/2026" vira "jun./2026" e ML.indexOf falharia)
       if(row.label==='__income__'){
         var incMi=ML.findIndex(function(lbl){return lbl.replace('/','_')===(row.id||'').replace('__inc__','');});
-        if(incMi>=0)ST.months[incMi].income=parseFloat(row.amount)||0;
+        if(incMi>=0)sheetIncome[incMi]=parseFloat(row.amount)||0;
         return;
       }
-      var mi=ML.indexOf(normMonth(row.month));
-      // fallback: infere o mês pela data da transação (dd/mm/yyyy) se o campo mês não parsear
-      if(mi<0&&row.date){var dp=row.date.match(/(\d{2})\/(\d{2})\/(\d{4})/);if(dp){var mn=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];mi=ML.indexOf(mn[parseInt(dp[2])]+'/'+dp[3]);}}
-      if(mi<0)return;
-      ST.months[mi].entries.push({id:row.id||String(Date.now()),date:row.date,label:row.label,category:{name:row.category,color:catCol(row.category)},amount:parseFloat(row.amount)||0,ts:row.date});
+      var mi=parseMiFromRow(row);if(mi<0)return;
+      sheetEntryIds.add(String(row.id));
+      if(!sheetEntries[mi])sheetEntries[mi]=[];
+      sheetEntries[mi].push({id:row.id||String(Date.now()),date:row.date,label:row.label,category:{name:row.category,color:catCol(row.category)},amount:parseFloat(row.amount)||0,ts:row.date});
     });
-    // merge do localStorage: fixed sempre; income e entries como fallback se a planilha não trouxe
-    ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(m.income===0&&d.income>0)m.income=d.income;if(m.entries.length===0&&d.entries&&d.entries.length>0)m.entries=d.entries;if(d.fixed)m.fixed=d.fixed;}});
-    // migração única: sobe salários já salvos no localStorage para a planilha
+    // aplica income do sheet (tem prioridade)
+    Object.keys(sheetIncome).forEach(function(i){ST.months[i].income=sheetIncome[i];});
+    // merge de entradas: sheet + entradas locais que ainda não foram para o sheet
+    ST.months.forEach(function(m,i){
+      var local=m.entries.filter(function(e){return!sheetEntryIds.has(String(e.id));});
+      m.entries=(sheetEntries[i]||[]).concat(local);
+    });
+    // fixed do localStorage
+    ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(d.fixed)m.fixed=d.fixed;}});
+    // migração única de income
     if(!localStorage.getItem('fin_inc_migrated')){localStorage.setItem('fin_inc_migrated','1');ST.months.forEach(function(m){if(m.income>0)saveIncome(m.label,m.income);});}
-  } else {
-    loadLocal();
+    saveLocal();
+    requestAnimationFrame(function(){updHdr();renderPills();renderPanel();});
   }
-  setSd('ok');initApp();
+  setSd('ok');
 }
 function fmt(v){return'R$\u00a0'+Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function fmtK(v){if(Math.abs(v)>=1000){var k=Math.abs(v)/1000;var dec=k<2?2:1;return'R$\u00a0'+k.toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec})+'k';}return fmt(v);}
