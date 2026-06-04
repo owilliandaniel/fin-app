@@ -228,7 +228,7 @@ var CATS=[{name:'Mercado',color:'#10B981',keys:['mercado','feira','supermercado'
 function dCat(t){var l=t.toLowerCase();for(var c of CATS)if(c.keys.some(function(k){return l.includes(k)}))return c;return CATS[CATS.length-1];}
 function catCol(n){var c=CATS.find(function(x){return x.name===n});return c?c.color:'#6B7280';}
 
-var ST={mi:0,months:ML.map(function(lbl,i){return{label:lbl,income:0,fixed:BF[i].map(function(f){return Object.assign({},f)}),entries:[]};}),eFixed:null,eEntry:null,eInc:false,addFix:false,eCard:null,panel:'chat'};
+var ST={mi:0,months:ML.map(function(lbl,i){return{label:lbl,income:0,fixed:BF[i].map(function(f){return Object.assign({},f)}),entries:[]};}),eFixed:null,eEntry:null,eInc:false,addFix:false,eCard:null,addCard:false,panel:'chat'};
 function cur(){return ST.months[ST.mi];}
 
 // === Cartões: limite revolvente (global, não por mês) ===
@@ -241,6 +241,7 @@ function defCards(){return[
 function loadCards(){var s=localStorage.getItem('fin_cards');try{CARDS=s?JSON.parse(s):defCards();}catch(e){CARDS=defCards();}}
 function saveCards(){localStorage.setItem('fin_cards',JSON.stringify(CARDS));}
 function cardLivre(c){return c.limite-c.ocupado-c.parcelas;}
+function cardKey(name){var b=name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'').slice(0,20)||'cartao';var k=b,i=2;while(CARDS.some(function(c){return c.key===k;})){k=b+i;i++;}return k;}
 function findCard(txt){var l=String(txt).toLowerCase();for(var i=0;i<CARDS.length;i++){if(l.indexOf(CARDS[i].name.toLowerCase())>=0||l.indexOf(CARDS[i].key)>=0)return CARDS[i];}return null;}
 
 function saveLocal(){ST.months.forEach(function(m,i){localStorage.setItem('fin_m'+i,JSON.stringify({income:m.income,entries:m.entries,fixed:m.fixed}));});}
@@ -699,7 +700,7 @@ function renderCartoes(){
     var col=pctUsed>85?'#EF4444':pctUsed>60?'#F59E0B':'#10B981';
     html+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">💳 '+c.name+'</div>';
     if(ST.eCard===c.key)html+='<button class="btn-x" onmousedown="event.preventDefault()" onclick="canCard()">✕</button>';
-    else html+='<button style="font-size:11px;padding:3px 10px;border-radius:6px;border:.5px solid #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="edCard(\''+c.key+'\')">✏️ Editar</button>';
+    else html+='<span style="display:flex;gap:6px"><button style="font-size:11px;padding:3px 10px;border-radius:6px;border:.5px solid #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="edCard(\''+c.key+'\')">✏️ Editar</button><button class="btn-del" onclick="dlCard(\''+c.key+'\')">✕</button></span>';
     html+='</div>';
     if(ST.eCard===c.key){
       html+='<div style="display:flex;flex-direction:column;gap:8px">'
@@ -726,8 +727,29 @@ function renderCartoes(){
     }
     html+='</div>';
   });
+  if(ST.addCard)html+='<div class="card"><div class="edit-row" style="gap:6px"><input class="edit-input" id="nc-name" type="text" placeholder="Nome do cartão" style="flex:1.4" onkeydown="ncKey(event)"><input class="edit-input" id="nc-lim" type="text" inputmode="decimal" placeholder="Limite" onkeydown="ncKey(event)"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svAddCard()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canAddCard()">✕</button></div></div>';
+  else html+='<button style="width:100%;font-size:13px;padding:10px;border-radius:8px;border:1px dashed #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="showAddCard()">+ Adicionar cartão</button>';
   document.getElementById('cartoes-content').innerHTML=html;
   if(ST.eCard){var i=document.getElementById('cl-'+ST.eCard);if(i){i.focus();i.select();}}
+  if(ST.addCard){var nc=document.getElementById('nc-name');if(nc)nc.focus();}
+}
+function showAddCard(){ST.addCard=true;ST.eCard=null;renderCartoes();}
+function canAddCard(){ST.addCard=false;renderCartoes();}
+function ncKey(e){if(e.key==='Enter')svAddCard();if(e.key==='Escape')canAddCard();}
+function svAddCard(){
+  var nm=(document.getElementById('nc-name').value||'').trim();
+  if(!nm){showToast('Informe o nome do cartão');return;}
+  var lim=pAmt(document.getElementById('nc-lim').value);
+  var c={key:cardKey(nm),name:nm,limite:lim,ocupado:0,parcelas:0,items:[]};
+  CARDS.push(c);ST.addCard=false;syncCard(c);renderCartoes();showToast('Cartão adicionado ✓');
+}
+function dlCard(key){
+  var c=CARDS.find(function(x){return x.key===key;});if(!c)return;
+  if(!confirm('Apagar o cartão "'+c.name+'" e todas as suas compras?'))return;
+  CARDS=CARDS.filter(function(x){return x.key!==key;});
+  saveCards();
+  if(!CFG.demoMode&&CFG.scriptUrl)callScript({action:'delete',id:'__card__'+key});
+  renderCartoes();showToast('Cartão removido');
 }
 function cardField(label,id,val){
   return'<label style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:#6B7280">'+label
