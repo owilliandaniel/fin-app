@@ -269,9 +269,14 @@ async function loadRemote(){
     ST.months.forEach(function(m){m.entries=[];});
     res.rows.forEach(function(row){
       if(!row.label||!row.amount)return;
+      // sentinel de salário: usa o ID para achar o mês — imune ao Sheets auto-formatar
+      // o campo mês como data (ex: "Jun/2026" vira "jun./2026" e ML.indexOf falharia)
+      if(row.label==='__income__'){
+        var incMi=ML.findIndex(function(lbl){return lbl.replace('/','_')===(row.id||'').replace('__inc__','');});
+        if(incMi>=0)ST.months[incMi].income=parseFloat(row.amount)||0;
+        return;
+      }
       var mi=ML.indexOf(row.month);if(mi<0)return;
-      // sentinel row: income saved from any device — takes priority over localStorage
-      if(row.label==='__income__'){ST.months[mi].income=parseFloat(row.amount)||0;return;}
       ST.months[mi].entries.push({id:row.id||String(Date.now()),date:row.date,label:row.label,category:{name:row.category,color:catCol(row.category)},amount:parseFloat(row.amount)||0,ts:row.date});
     });
     // merge do localStorage: fixed sempre; income só como fallback se a planilha não tiver
