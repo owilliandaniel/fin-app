@@ -240,6 +240,15 @@ async function appendRow(entry,ml){
   if(res&&!res.ok){setSd('err');showToast('Erro ao salvar: '+(res.error||''));}
 }
 
+async function saveIncome(monthLabel,income){
+  saveLocal();
+  // income is stored as a sentinel row so it syncs across devices (no Apps Script changes needed)
+  // delete first so we don't accumulate duplicates if the script doesn't upsert by id
+  var id='__inc__'+monthLabel.replace('/','_');
+  await callScript({action:'delete',id:id});
+  callScript({action:'append',date:'',label:'__income__',category:'__income__',amount:income,month:monthLabel,id:id});
+}
+
 async function deleteRow(id){
   saveLocal();
   callScript({action:'delete',id:String(id)});
@@ -261,10 +270,12 @@ async function loadRemote(){
     res.rows.forEach(function(row){
       if(!row.label||!row.amount)return;
       var mi=ML.indexOf(row.month);if(mi<0)return;
+      // sentinel row: income saved from any device — takes priority over localStorage
+      if(row.label==='__income__'){ST.months[mi].income=parseFloat(row.amount)||0;return;}
       ST.months[mi].entries.push({id:row.id||String(Date.now()),date:row.date,label:row.label,category:{name:row.category,color:catCol(row.category)},amount:parseFloat(row.amount)||0,ts:row.date});
     });
-    // só carrega income/fixos do local, sem sobrescrever entries remotos
-    ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(d.income!=null)m.income=d.income;if(d.fixed)m.fixed=d.fixed;}});
+    // fixos overrides from local (income already loaded from sheet above)
+    ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(d.fixed)m.fixed=d.fixed;}});
   } else {
     loadLocal();
   }
@@ -462,8 +473,7 @@ function svInc(){
   var i=document.getElementById('inc-inp');if(!i)return;
   var n=pAmt(i.value);if(n<=0)return;
   cur().income=n;ST.eInc=false;saveLocal();
-  // requestAnimationFrame ensures iOS Safari flushes the composited GPU layer
-  // (keyboard-dismiss viewport resize can stale the header paint otherwise)
+  saveIncome(cur().label,n);
   requestAnimationFrame(function(){updHdr();renderFixos();});
 }
 function svIncOnBlur(){
@@ -472,6 +482,7 @@ function svIncOnBlur(){
   var i=document.getElementById('inc-inp');if(!i)return;
   var n=pAmt(i.value);if(n<=0)return;
   cur().income=n;ST.eInc=false;saveLocal();
+  saveIncome(cur().label,n);
   requestAnimationFrame(function(){updHdr();renderFixos();});
 }
 
