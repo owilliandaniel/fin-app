@@ -368,7 +368,7 @@ function updHdr(){
   document.getElementById('prog-bar').style.background=c.col;
   document.getElementById('prog-spent').textContent='Gasto: '+fmtK(c.sp);
   document.getElementById('prog-pct').textContent=Math.round(c.pct)+'%';
-  document.getElementById('prog-total').textContent='Livre: '+(c.bv!=null?fmtK(c.bv):'—');
+  document.getElementById('prog-total').textContent='Livre: '+(c.rem!=null?fmtK(c.rem):'—');
 }
 function renderPills(){
   document.getElementById('month-scroll').innerHTML=ML.map(function(lbl,i){
