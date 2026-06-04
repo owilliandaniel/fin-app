@@ -477,7 +477,20 @@ async function send(){
     reply=em+' '+cur().label+':\n\nOrçamento: '+(c.bv!=null?fmt(c.bv):'sem salário')+'\nGasto: '+fmt(c.sp)+'\nLivre: '+(c.rem!=null?fmt(c.rem):'—')+'\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.';
   }else if(low.match(/por dia|diário/)){reply='📅 '+(c.rem!=null?fmt(c.rem):'—')+' ÷ '+c.dl+' dias = '+fmt(c.day)+'/dia.';}
   else if(low.match(/oi|olá|ola|bom dia|boa tarde|hey/)){reply='Oi! 👋 Em '+cur().label+': '+(cur().income>0?'livre '+fmt(c.rem):'salário não lançado ainda')+'.';}
-  else if(low.match(/ajuda|help/)){reply='💬 "gastei 50 no mercado"\n"gastei 300 em 3x no mercado" (parcela nos meses)\n"gastei 80 no cartão santander"\n"quanto posso gastar?"';}
+  else if(low.match(/(apagar|limpar|excluir|deletar|remover).*(parcela|parcelas)/)){
+    var nDel=0;
+    ST.months.forEach(function(m){
+      var keep=[];
+      m.entries.forEach(function(e){
+        if(/\(\d+\/\d+\)\s*$/.test(e.label)){deleteRow(e.id);nDel++;}
+        else keep.push(e);
+      });
+      m.entries=keep;
+    });
+    saveLocal();if(ST.panel!=='chat')renderPanel();
+    reply='🧹 Apaguei '+nDel+' parcela(s) de todos os meses. Pode lançar de novo.';
+  }
+  else if(low.match(/ajuda|help/)){reply='💬 "gastei 50 no mercado"\n"gastei 300 em 3x no mercado" (parcela nos meses)\n"gastei 80 no cartão santander"\n"apagar parcelas" (limpa todas)\n"quanto posso gastar?"';}
   else{reply='Não entendi 🤔 Tente: "gastei 80 de delivery"\nOu: "quanto posso gastar?"';}
   addMsg('bot',reply);updHdr();
 }
