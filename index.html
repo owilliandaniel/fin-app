@@ -118,7 +118,7 @@
   <div id="header">
     <div class="hdr-top">
       <div>
-        <div class="hdr-title">💬 Fin <span id="sync-dot" class="ok"></span> <span onclick="showDbg()" style="font-size:9px;opacity:.45;font-weight:400">v9</span></div>
+        <div class="hdr-title">💬 Fin <span id="sync-dot" class="ok"></span></div>
         <div class="hdr-sub" id="hdr-sub">carregando...</div>
       </div>
       <div>
@@ -231,13 +231,6 @@ function saveLocal(){ST.months.forEach(function(m,i){localStorage.setItem('fin_m
 function loadLocal(){ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);m.income=d.income!=null?d.income:m.income;m.entries=d.entries||[];m.fixed=d.fixed||m.fixed;}});}
 
 function setSd(s){document.getElementById('sync-dot').className=s;}
-function showDbg(){
-  var d=window.__DBG||{nada:'sem sync ainda'};
-  var t='URL: '+(CFG.scriptUrl||'(vazio)').slice(0,55)+'\ndemo:'+CFG.demoMode+'\n\n'+JSON.stringify(d,null,1);
-  var o=document.getElementById('dbg-overlay');
-  if(!o){o=document.createElement('div');o.id='dbg-overlay';o.style.cssText='position:fixed;inset:0;z-index:9999;background:#000;color:#0f0;font:11px monospace;padding:16px;overflow:auto;white-space:pre-wrap;word-break:break-all';o.onclick=function(){o.remove();};document.body.appendChild(o);}
-  o.textContent='[toque pra fechar]\n\n'+t;
-}
 function showToast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
 
 function scriptUrl(params){
@@ -315,15 +308,12 @@ async function loadRemote(){
   setSd('syncing');
   var base=CFG.scriptUrl.split('?')[0];
   var res=null;
-  window.__DBG={steps:[]};
   try{
     var r=await fetchT(base+'?data='+encodeURIComponent(JSON.stringify({action:'read'}))+'&_='+Date.now(),{method:'GET',redirect:'follow',cache:'no-store'});
     var txt=await r.text();
-    window.__DBG.getStatus=r.status;window.__DBG.getLen=txt.length;window.__DBG.getHead=txt.slice(0,300);
-    try{res=JSON.parse(txt);}catch(e){window.__DBG.parseErr=String(e);}
-  }catch(e){window.__DBG.getErr=String(e);}
-  if(!res){window.__DBG.usedPost=true;res=await callScript({action:'read'});}
-  window.__DBG.ok=res&&res.ok;window.__DBG.rowCount=res&&res.rows?res.rows.length:0;
+    try{res=JSON.parse(txt);}catch(e){}
+  }catch(e){}
+  if(!res)res=await callScript({action:'read'});
   if(res&&res.ok&&res.rows){
     // constrói mapa de entradas do sheet por id
     var sheetEntryIds=new Set();
@@ -336,9 +326,7 @@ async function loadRemote(){
         if(incMi>=0)sheetIncome[incMi]=parseFloat(row.amount)||0;
         return;
       }
-      var mi=parseMiFromRow(row);
-      window.__DBG.steps.push({label:row.label,month:row.month,date:row.date,amount:row.amount,parsedMi:mi});
-      if(mi<0)return;
+      var mi=parseMiFromRow(row);if(mi<0)return;
       sheetEntryIds.add(String(row.id));
       if(!sheetEntries[mi])sheetEntries[mi]=[];
       sheetEntries[mi].push({id:row.id||String(Date.now()),date:row.date,label:row.label,category:{name:row.category,color:catCol(row.category)},amount:parseFloat(row.amount)||0,ts:row.date});
