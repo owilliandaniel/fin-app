@@ -526,13 +526,13 @@ async function send(){
       // PARCELADO (cartão ou não): SEMPRE entra nos Gastos fixos, uma parcela por mês, avisando quantas faltam
       var per=inst.per;
       var first=Math.round((inst.total-per*(inst.n-1))*100)/100;
-      var made=0;
+      var made=0,sid=Date.now();
       for(var k=0;k<inst.n;k++){
         var tmi=ST.mi+k;if(tmi>=ST.months.length)break;
         var rem=inst.n-1-k; // quantas faltam DEPOIS desta
         var nt=(k+1)+'/'+inst.n+(card?' · '+card.name:'')+(rem>0?' · faltam '+rem:' · última ✓');
         var maxId=ST.months[tmi].fixed.reduce(function(s,e){return Math.max(s,Number(e.id)||0);},0);
-        ST.months[tmi].fixed.push({id:maxId+1,name:label,amount:k===0?first:per,note:nt,parcela:true});
+        ST.months[tmi].fixed.push({id:maxId+1,name:label,amount:k===0?first:per,note:nt,parcela:true,serie:sid});
         made++;
       }
       saveLocal();
@@ -666,7 +666,7 @@ function renderFixos(){
     var isC=e.name==='Santander'||e.name==='Inter';
     var cItems=e.name==='Santander'?SI:e.name==='Inter'?II:[];
     html+='<div style="border-bottom:'+(i<m.fixed.length-1?'.5px solid #F3F4F6':'none')+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><div><span style="font-size:13px;color:#374151;font-weight:'+(isC?600:400)+'">'+e.name+'</span>'+(e.note?'<span class="badge'+(e.note.includes('✓')?' done':'')+'">'+e.note+'</span>':'')+' </div>';
-    if(ST.eFixed===e.id)html+='<div class="edit-row"><input class="edit-input" id="fi-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="fKey(event,'+e.id+')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svFixed('+e.id+')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canFixed()">✕</button></div>';
+    if(ST.eFixed===e.id)html+='<div class="edit-row" style="gap:6px"><input class="edit-input" id="fn-'+e.id+'" type="text" value="'+e.name+'" style="flex:1.4" onkeydown="fKey(event,'+e.id+')"><input class="edit-input" id="fi-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="fKey(event,'+e.id+')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svFixed('+e.id+')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canFixed()">✕</button></div>';
     else html+='<div style="display:flex;align-items:center;gap:8px"><span class="mono" style="font-size:13px;color:#6B7280">'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edFixed('+e.id+')">✏️</button><button class="btn-del" onclick="dlFixed('+e.id+')">✕</button></div>';
     html+='</div>';
     if(isC)cItems.forEach(function(ci,j){html+='<div style="display:flex;justify-content:space-between;padding:3px 0 3px 14px;border-bottom:'+(j<cItems.length-1?'.5px dashed #F3F4F6':'none')+'"><span style="font-size:11px;color:#9CA3AF">'+ci.desc+'</span><span class="mono" style="font-size:11px;color:#9CA3AF">'+fmt(ci.amount)+'</span></div>';});
@@ -678,7 +678,7 @@ function renderFixos(){
   html+='</div>';
   html+='<div style="font-size:11px;color:#D1D5DB;text-align:center;margin-top:8px">✏️ editar · Enter salvar · Esc cancelar</div>';
   document.getElementById('fixos-content').innerHTML=html;
-  if(ST.eFixed){var i=document.getElementById('fi-'+ST.eFixed);if(i){i.focus();i.select();}}
+  if(ST.eFixed){var i=document.getElementById('fn-'+ST.eFixed)||document.getElementById('fi-'+ST.eFixed);if(i){i.focus();i.select();}}
   if(ST.eInc){var j=document.getElementById('inc-inp');if(j){j.focus();j.select();}}
   if(ST.addFix){var nf=document.getElementById('nf-name');if(nf)nf.focus();}
 }
@@ -784,9 +784,14 @@ function edFixed(id){ST.eFixed=id;renderFixos();}
 function canFixed(){ST.eFixed=null;renderFixos();}
 function fKey(e,id){if(e.key==='Enter')svFixed(id);if(e.key==='Escape')canFixed();}
 function svFixed(id){
-  var i=document.getElementById('fi-'+id);if(!i)return;
-  var n=pAmt(i.value);if(n<=0)return;
-  cur().fixed=cur().fixed.map(function(x){return x.id===id?Object.assign({},x,{amount:n}):x;});
+  var ai=document.getElementById('fi-'+id);if(!ai)return;
+  var ni=document.getElementById('fn-'+id);
+  var n=pAmt(ai.value);var nm=ni?ni.value.trim():'';
+  var serie=null;
+  cur().fixed.forEach(function(x){if(String(x.id)===String(id))serie=x.serie;});
+  cur().fixed=cur().fixed.map(function(x){return String(x.id)===String(id)?Object.assign({},x,{amount:n>0?n:x.amount,name:nm||x.name}):x;});
+  // renomeou e é parte de uma série de parcelas? renomeia em todos os meses
+  if(nm&&serie!=null){ST.months.forEach(function(m){m.fixed=m.fixed.map(function(x){return x.serie===serie?Object.assign({},x,{name:nm}):x;});});}
   ST.eFixed=null;saveLocal();
   requestAnimationFrame(function(){updHdr();renderFixos();});
 }
