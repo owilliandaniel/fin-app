@@ -169,6 +169,14 @@
 </div>
 <script>
 var CFG={scriptUrl:'',demoMode:false};
+// normaliza mês retornado pelo Sheets que auto-formata "Jun/2026" → "jun./2026"
+function normMonth(s){
+  if(!s)return '';
+  s=String(s);
+  var m=s.match(/([a-zÀ-ɏ]+)\.?\s*[\/\-]?\s*(\d{4})/i);
+  if(!m)return s;
+  return m[1].charAt(0).toUpperCase()+m[1].slice(1,3).toLowerCase()+'/'+m[2];
+}
 function loadCfg(){var s=localStorage.getItem('fin_cfg');if(s){CFG=Object.assign(CFG,JSON.parse(s));return true;}return false;}
 function saveConfig(){
   CFG.scriptUrl=document.getElementById('cfg-script-url').value.trim();
@@ -276,7 +284,7 @@ async function loadRemote(){
         if(incMi>=0)ST.months[incMi].income=parseFloat(row.amount)||0;
         return;
       }
-      var mi=ML.indexOf(row.month);if(mi<0)return;
+      var mi=ML.indexOf(normMonth(row.month));if(mi<0)return;
       ST.months[mi].entries.push({id:row.id||String(Date.now()),date:row.date,label:row.label,category:{name:row.category,color:catCol(row.category)},amount:parseFloat(row.amount)||0,ts:row.date});
     });
     // merge do localStorage: fixed sempre; income só como fallback se a planilha não tiver
@@ -443,7 +451,7 @@ function renderFixos(){
   var html='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">Salário — '+m.label+'</div>';
   if(!ST.eInc)html+='<button style="font-size:11px;padding:3px 10px;border-radius:6px;border:.5px solid #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="edInc()">✏️ Editar</button>';
   html+='</div>';
-  if(ST.eInc)html+='<div><div class="edit-row" style="margin-bottom:6px"><input class="edit-input" id="inc-inp" type="text" inputmode="decimal" value="'+m.income+'" onkeydown="incKey(event)" onblur="svIncOnBlur()"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svInc()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canInc()">✕</button></div><label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#6B7280;cursor:pointer"><input type="checkbox" id="inc-all" style="width:14px;height:14px;cursor:pointer"> Aplicar a todos os meses</label></div>';
+  if(ST.eInc)html+='<div><div class="edit-row" style="margin-bottom:6px"><input class="edit-input" id="inc-inp" type="text" inputmode="decimal" value="'+m.income+'" onkeydown="incKey(event)" onblur="svIncOnBlur(event)"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svInc()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canInc()">✕</button></div><label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#6B7280;cursor:pointer"><input type="checkbox" id="inc-all" style="width:14px;height:14px;cursor:pointer"> Aplicar a todos os meses</label></div>';
   else html+='<div class="mono" style="font-size:20px;font-weight:700;color:'+(m.income>0?'#10B981':'#9CA3AF')+'">'+(m.income>0?fmt(m.income):'não lançado')+'</div>';
   if(m.income>0)html+='<div style="height:1px;background:#F3F4F6;margin:8px 0"></div><div style="display:flex;justify-content:space-between"><div><div style="font-size:10px;color:#9CA3AF">Total fixos</div><div class="mono" style="font-size:14px;font-weight:600;color:#EF4444">−'+fmt(c.tf)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:#9CA3AF">Sobra variável</div><div class="mono" style="font-size:14px;font-weight:700;color:#10B981">'+fmt(c.bv||0)+'</div></div></div>';
   html+='</div><div class="card"><div class="card-title">Contas fixas</div>';
@@ -496,9 +504,11 @@ function svInc(){
   var n=pAmt(i.value);if(n<=0)return;
   applyIncome(n);
 }
-function svIncOnBlur(){
-  // iOS "Done" key fires blur, não keydown-Enter — auto-salva no blur se ainda editando
+function svIncOnBlur(e){
   if(!ST.eInc)return;
+  // ignora blur causado por clique no checkbox, OK ou Cancelar — eles tratam o save
+  var rt=e&&e.relatedTarget;
+  if(rt&&(rt.id==='inc-all'||rt.classList.contains('btn-ok')||rt.classList.contains('btn-x')))return;
   var i=document.getElementById('inc-inp');if(!i)return;
   var n=pAmt(i.value);if(n<=0)return;
   applyIncome(n);
