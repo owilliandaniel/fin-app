@@ -299,6 +299,16 @@ async function deleteRow(id){
   callScript({action:'delete',id:String(id)});
 }
 
+// sincroniza um cartão como linha sentinela no Sheet (igual ao income), pra aparecer em todos os aparelhos
+async function syncCard(c){
+  saveCards();
+  if(CFG.demoMode||!CFG.scriptUrl)return;
+  var id='__card__'+c.key;
+  await callScript({action:'delete',id:id});
+  callScript({action:'append',date:'',label:'__card__',category:JSON.stringify(c),amount:c.limite||0,month:'',id:id});
+}
+function syncAllCards(){CARDS.forEach(function(c){syncCard(c);});}
+
 function parseMiFromRow(row){
   // tenta normMonth no campo mês
   var mi=ML.indexOf(normMonth(row.month));
@@ -333,8 +343,14 @@ async function loadRemote(){
     var sheetEntryIds=new Set();
     var sheetIncome={};
     var sheetEntries={};
+    var sheetCards={};
     res.rows.forEach(function(row){
-      if(!row.label||!row.amount)return;
+      if(!row.label)return;
+      if(row.label==='__card__'){
+        try{var cd=JSON.parse(row.category);if(cd&&cd.key)sheetCards[cd.key]=cd;}catch(e){}
+        return;
+      }
+      if(!row.amount)return;
       if(row.label==='__income__'){
         var incMi=ML.findIndex(function(lbl){return lbl.replace('/','_')===(row.id||'').replace('__inc__','');});
         if(incMi>=0)sheetIncome[incMi]=parseFloat(row.amount)||0;
@@ -347,6 +363,12 @@ async function loadRemote(){
     });
     // aplica income do sheet (tem prioridade)
     Object.keys(sheetIncome).forEach(function(i){ST.months[i].income=sheetIncome[i];});
+    // aplica cartões do sheet (tem prioridade sobre o local)
+    var ck=Object.keys(sheetCards);
+    if(ck.length){
+      ck.forEach(function(k){var idx=CARDS.findIndex(function(c){return c.key===k;});if(idx>=0)CARDS[idx]=sheetCards[k];else CARDS.push(sheetCards[k]);});
+      saveCards();
+    }
     // merge de entradas: sheet + entradas locais que ainda não foram para o sheet
     ST.months.forEach(function(m,i){
       var local=m.entries.filter(function(e){return!sheetEntryIds.has(String(e.id));});
@@ -356,6 +378,8 @@ async function loadRemote(){
     ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(d.fixed)m.fixed=d.fixed;}});
     // migração única de income
     if(!localStorage.getItem('fin_inc_migrated')){localStorage.setItem('fin_inc_migrated','1');ST.months.forEach(function(m){if(m.income>0)saveIncome(m.label,m.income);});}
+    // migração única de cartões: se o Sheet ainda não tem cartões, envia os locais
+    if(ck.length===0&&!localStorage.getItem('fin_cards_migrated')){localStorage.setItem('fin_cards_migrated','1');syncAllCards();}
     saveLocal();
     requestAnimationFrame(function(){updHdr();renderPills();renderPanel();});
   }
@@ -473,7 +497,7 @@ async function send(){
         card.items.push({id:Date.now(),desc:label,per:parsed.amount,n:1,total:parsed.amount,kind:'vista',date:toDay()});
         instReply='💳 '+card.name+' · '+label+': '+fmt(parsed.amount)+' ocupado.\nLivre no cartão: '+fmt(cardLivre(card));
       }
-      saveCards();
+      syncCard(card);
     }else if(inst){
       // parcelado FORA do cartão: entra em GASTOS FIXOS, uma parcela por mês, avisando quantas faltam
       var per=inst.per;
@@ -684,7 +708,7 @@ function svCard(key){
   var c=CARDS.find(function(x){return x.key===key;});if(!c)return;
   var gl=function(p){var el=document.getElementById(p+'-'+key);return el?pAmt(el.value):0;};
   c.limite=gl('cl');c.ocupado=gl('co');c.parcelas=gl('cp');
-  ST.eCard=null;saveCards();renderCartoes();showToast('Cartão atualizado ✓');
+  ST.eCard=null;syncCard(c);renderCartoes();showToast('Cartão atualizado ✓');
 }
 function dlCardItem(key,id){
   var c=CARDS.find(function(x){return x.key===key;});if(!c||!c.items)return;
@@ -692,7 +716,7 @@ function dlCardItem(key,id){
   if(it.kind==='parc')c.parcelas=Math.max(0,Math.round((c.parcelas-it.total)*100)/100);
   else c.ocupado=Math.max(0,Math.round((c.ocupado-it.total)*100)/100);
   c.items=c.items.filter(function(x){return String(x.id)!==String(id);});
-  saveCards();renderCartoes();
+  syncCard(c);renderCartoes();
 }
 function edFixed(id){ST.eFixed=id;renderFixos();}
 function canFixed(){ST.eFixed=null;renderFixos();}
