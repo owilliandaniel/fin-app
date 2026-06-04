@@ -224,7 +224,7 @@ var CATS=[{name:'Mercado',color:'#10B981',keys:['mercado','feira','supermercado'
 function dCat(t){var l=t.toLowerCase();for(var c of CATS)if(c.keys.some(function(k){return l.includes(k)}))return c;return CATS[CATS.length-1];}
 function catCol(n){var c=CATS.find(function(x){return x.name===n});return c?c.color:'#6B7280';}
 
-var ST={mi:0,months:ML.map(function(lbl,i){return{label:lbl,income:0,fixed:BF[i].map(function(f){return Object.assign({},f)}),entries:[]};}),eFixed:null,eEntry:null,eInc:false,panel:'chat'};
+var ST={mi:0,months:ML.map(function(lbl,i){return{label:lbl,income:0,fixed:BF[i].map(function(f){return Object.assign({},f)}),entries:[]};}),eFixed:null,eEntry:null,eInc:false,addFix:false,panel:'chat'};
 function cur(){return ST.months[ST.mi];}
 
 function saveLocal(){ST.months.forEach(function(m,i){localStorage.setItem('fin_m'+i,JSON.stringify({income:m.income,entries:m.entries,fixed:m.fixed}));});}
@@ -521,16 +521,36 @@ function renderFixos(){
     var cItems=e.name==='Santander'?SI:e.name==='Inter'?II:[];
     html+='<div style="border-bottom:'+(i<m.fixed.length-1?'.5px solid #F3F4F6':'none')+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><div><span style="font-size:13px;color:#374151;font-weight:'+(isC?600:400)+'">'+e.name+'</span>'+(e.note?'<span class="badge'+(e.note.includes('✓')?' done':'')+'">'+e.note+'</span>':'')+' </div>';
     if(ST.eFixed===e.id)html+='<div class="edit-row"><input class="edit-input" id="fi-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="fKey(event,'+e.id+')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svFixed('+e.id+')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canFixed()">✕</button></div>';
-    else html+='<div style="display:flex;align-items:center;gap:8px"><span class="mono" style="font-size:13px;color:#6B7280">'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edFixed('+e.id+')">✏️</button></div>';
+    else html+='<div style="display:flex;align-items:center;gap:8px"><span class="mono" style="font-size:13px;color:#6B7280">'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edFixed('+e.id+')">✏️</button><button class="btn-del" onclick="dlFixed('+e.id+')">✕</button></div>';
     html+='</div>';
     if(isC)cItems.forEach(function(ci,j){html+='<div style="display:flex;justify-content:space-between;padding:3px 0 3px 14px;border-bottom:'+(j<cItems.length-1?'.5px dashed #F3F4F6':'none')+'"><span style="font-size:11px;color:#9CA3AF">'+ci.desc+'</span><span class="mono" style="font-size:11px;color:#9CA3AF">'+fmt(ci.amount)+'</span></div>';});
     html+='</div>';
   });
-  html+='<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:1px solid #E5E7EB"><span style="font-size:13px;font-weight:600">Total fixos</span><span class="mono" style="font-size:13px;font-weight:700;color:#EF4444">'+fmt(c.tf)+'</span></div></div>';
+  html+='<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:1px solid #E5E7EB"><span style="font-size:13px;font-weight:600">Total fixos</span><span class="mono" style="font-size:13px;font-weight:700;color:#EF4444">'+fmt(c.tf)+'</span></div>';
+  if(ST.addFix)html+='<div class="edit-row" style="margin-top:10px;gap:6px"><input class="edit-input" id="nf-name" type="text" placeholder="Nome" style="flex:1.4" onkeydown="nfKey(event)"><input class="edit-input" id="nf-amt" type="text" inputmode="decimal" placeholder="0,00" onkeydown="nfKey(event)"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svAddFix()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canAddFix()">✕</button></div>';
+  else html+='<button style="width:100%;margin-top:10px;font-size:12px;padding:8px;border-radius:8px;border:1px dashed #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="showAddFix()">+ Adicionar conta fixa</button>';
+  html+='</div>';
   html+='<div style="font-size:11px;color:#D1D5DB;text-align:center;margin-top:8px">✏️ editar · Enter salvar · Esc cancelar</div>';
   document.getElementById('fixos-content').innerHTML=html;
   if(ST.eFixed){var i=document.getElementById('fi-'+ST.eFixed);if(i){i.focus();i.select();}}
   if(ST.eInc){var j=document.getElementById('inc-inp');if(j){j.focus();j.select();}}
+  if(ST.addFix){var nf=document.getElementById('nf-name');if(nf)nf.focus();}
+}
+function showAddFix(){ST.addFix=true;ST.eFixed=null;renderFixos();}
+function canAddFix(){ST.addFix=false;renderFixos();}
+function nfKey(e){if(e.key==='Enter')svAddFix();if(e.key==='Escape')canAddFix();}
+function svAddFix(){
+  var nm=(document.getElementById('nf-name').value||'').trim();
+  var n=pAmt(document.getElementById('nf-amt').value);
+  if(!nm||n<=0){showToast('Informe nome e valor');return;}
+  var maxId=cur().fixed.reduce(function(s,e){return Math.max(s,Number(e.id)||0);},0);
+  cur().fixed.push({id:maxId+1,name:nm,amount:n,note:''});
+  ST.addFix=false;saveLocal();
+  requestAnimationFrame(function(){updHdr();renderFixos();});
+}
+function dlFixed(id){
+  cur().fixed=cur().fixed.filter(function(x){return String(x.id)!==String(id);});
+  saveLocal();updHdr();renderFixos();
 }
 function edFixed(id){ST.eFixed=id;renderFixos();}
 function canFixed(){ST.eFixed=null;renderFixos();}
