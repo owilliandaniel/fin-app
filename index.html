@@ -318,6 +318,14 @@ async function syncCard(c){
 }
 function syncAllCards(){CARDS.forEach(function(c){syncCard(c);});}
 
+async function syncFixed(monthLabel,fixed){
+  saveLocal();
+  if(CFG.demoMode||!CFG.scriptUrl)return;
+  var id='__fixed__'+monthLabel.replace('/','_');
+  await callScript({action:'delete',id:id});
+  callScript({action:'append',date:'',label:'__fixed__',category:JSON.stringify(fixed),amount:0,month:monthLabel,id:id});
+}
+
 // apaga TUDO (gastos, fixos, salários, cartões) em todos os meses — local e no Sheet (todos os aparelhos)
 async function wipeAll(){
   if(!confirm('Apagar TODOS os dados de TODOS os meses (gastos, fixos, salários e cartões)?\n\nIsso apaga também na planilha — some de todos os aparelhos. Não dá pra desfazer.'))return;
@@ -380,9 +388,10 @@ async function loadRemote(){
     var sheetEntryIds=new Set();
     var sheetIncome={};
     var sheetEntries={};
-    var sheetCards={};
+    var sheetCards={};var sheetFixed={};
     res.rows.forEach(function(row){
       if(!row.label)return;
+      if(row.label==='__fixed__'){try{var fd=JSON.parse(row.category);var fmi=ML.findIndex(function(lbl){return lbl.replace('/','_')===(row.id||'').replace('__fixed__','');});if(fmi>=0&&Array.isArray(fd))sheetFixed[fmi]=fd;}catch(e){}return;}
       if(row.label==='__card__'){
         try{var cd=JSON.parse(row.category);if(cd&&cd.key)sheetCards[cd.key]=cd;}catch(e){}
         return;
@@ -411,8 +420,8 @@ async function loadRemote(){
       var local=m.entries.filter(function(e){return!sheetEntryIds.has(String(e.id));});
       m.entries=(sheetEntries[i]||[]).concat(local);
     });
-    // fixed do localStorage
-    ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(d.fixed)m.fixed=d.fixed;}});
+    // fixed: sheet tem prioridade, local como fallback
+    ST.months.forEach(function(m,i){if(sheetFixed[i]!==undefined){m.fixed=sheetFixed[i];}else{var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(d.fixed)m.fixed=d.fixed;}}});
     // migração única de income
     if(!localStorage.getItem('fin_inc_migrated')){localStorage.setItem('fin_inc_migrated','1');ST.months.forEach(function(m){if(m.income>0)saveIncome(m.label,m.income);});}
     // migração única de cartões: se o Sheet ainda não tem cartões, envia os locais
@@ -552,8 +561,9 @@ async function send(){
       syncCard(card);
       instReply='💳 '+card.name+' · '+label+': '+fmt(parsed.amount)+' ocupado.\nLivre no cartão: '+fmt(cardLivre(card));
     }else{
-      newE=Object.assign({},parsed,{id:Date.now(),date:toDay(),ts:now});
-      cur().entries.push(newE);appendRow(newE,cur().label);
+      var tmi=Math.min(ST.mi+1,ST.months.length-1);
+      newE=Object.assign({},parsed,{id:Date.now(),date:toDay(),ts:now,_tmi:tmi});
+      ST.months[tmi].entries.push(newE);appendRow(newE,ST.months[tmi].label);
     }
     if(ST.panel!=='chat')renderPanel();
   }
@@ -561,7 +571,9 @@ async function send(){
   if(instReply){reply=instReply;}
   else if(newE){
     var e=c.rem>=c.bv*.5?'✅':c.rem>=c.bv*.2?'⚠️':'🔴';
-    reply=e+' Registrei '+fmt(newE.amount)+' em '+newE.label+'.\n\nSobra: '+fmt(c.rem)+' ('+Math.round(100-c.pct)+'%).\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.'+cardMsg;
+    var tgtLbl=ST.months[newE._tmi||ST.mi].label;
+    var nextInfo=newE._tmi&&newE._tmi!==ST.mi?' → pago em '+tgtLbl:'';
+    reply=e+' Registrei '+fmt(newE.amount)+' em '+newE.label+nextInfo+'.\n\nSobra: '+fmt(c.rem)+' ('+Math.round(100-c.pct)+'%).\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.'+cardMsg;
   }else if(low.match(/quanto (posso|tenho|sobrou|resta|falta)|saldo|resumo|status/)){
     var em=c.pct<60?'😊':c.pct<85?'😐':'😬';
     reply=em+' '+cur().label+':\n\nOrçamento: '+(c.bv!=null?fmt(c.bv):'sem salário')+'\nGasto: '+fmt(c.sp)+'\nLivre: '+(c.rem!=null?fmt(c.rem):'—')+'\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.';
@@ -689,13 +701,36 @@ function svAddFix(){
   var nm=(document.getElementById('nf-name').value||'').trim();
   var n=pAmt(document.getElementById('nf-amt').value);
   if(!nm||n<=0){showToast('Informe nome e valor');return;}
-  var maxId=cur().fixed.reduce(function(s,e){return Math.max(s,Number(e.id)||0);},0);
-  cur().fixed.push({id:maxId+1,name:nm,amount:n,note:''});
+  var added=0;
+  ST.months.forEach(function(m,mi){
+    if(mi>=ST.mi&&!m.fixed.some(function(x){return x.name.toLowerCase()===nm.toLowerCase();})){
+      var maxId=m.fixed.reduce(function(s,e){return Math.max(s,Number(e.id)||0);},0);
+      m.fixed.push({id:maxId+1,name:nm,amount:n,note:''});
+      syncFixed(m.label,m.fixed);
+      added++;
+    }
+  });
   ST.addFix=false;saveLocal();
+  if(added>1)showToast('Lançado em '+added+' meses ✓');
   requestAnimationFrame(function(){updHdr();renderFixos();});
 }
 function dlFixed(id){
-  cur().fixed=cur().fixed.filter(function(x){return String(x.id)!==String(id);});
+  var item=cur().fixed.find(function(x){return String(x.id)===String(id);});
+  if(!item)return;
+  if(item.serie!=null&&item.parcela){
+    var delAll=confirm('Apagar esta e todas as parcelas seguintes?\n\nOK = apaga do mês atual em diante\nCancelar = apaga só este mês');
+    var serie=item.serie;
+    ST.months.forEach(function(m,mi){
+      if(delAll?mi>=ST.mi:mi===ST.mi){
+        var before=m.fixed.length;
+        m.fixed=m.fixed.filter(function(x){return x.serie!==serie;});
+        if(m.fixed.length!==before)syncFixed(m.label,m.fixed);
+      }
+    });
+  }else{
+    cur().fixed=cur().fixed.filter(function(x){return String(x.id)!==String(id);});
+    syncFixed(cur().label,cur().fixed);
+  }
   saveLocal();updHdr();renderFixos();
 }
 
@@ -787,11 +822,25 @@ function svFixed(id){
   var ai=document.getElementById('fi-'+id);if(!ai)return;
   var ni=document.getElementById('fn-'+id);
   var n=pAmt(ai.value);var nm=ni?ni.value.trim():'';
-  var serie=null;
-  cur().fixed.forEach(function(x){if(String(x.id)===String(id))serie=x.serie;});
+  var serie=null,origName='';
+  cur().fixed.forEach(function(x){if(String(x.id)===String(id)){serie=x.serie;origName=x.name;}});
   cur().fixed=cur().fixed.map(function(x){return String(x.id)===String(id)?Object.assign({},x,{amount:n>0?n:x.amount,name:nm||x.name}):x;});
-  // renomeou e é parte de uma série de parcelas? renomeia em todos os meses
-  if(nm&&serie!=null){ST.months.forEach(function(m){m.fixed=m.fixed.map(function(x){return x.serie===serie?Object.assign({},x,{name:nm}):x;});});}
+  if(serie!=null){
+    // parcelas: propaga nome a todos os meses da série
+    ST.months.forEach(function(m,mi){
+      if(mi!==ST.mi)m.fixed=m.fixed.map(function(x){return x.serie===serie?Object.assign({},x,{name:nm||x.name}):x;});
+      syncFixed(m.label,m.fixed);
+    });
+  }else if(origName){
+    // fixo regular: propaga nome+valor para meses futuros com mesmo nome
+    ST.months.forEach(function(m,mi){
+      if(mi>ST.mi){
+        m.fixed=m.fixed.map(function(x){return x.name===origName?Object.assign({},x,{name:nm||x.name,amount:n>0?n:x.amount}):x;});
+        syncFixed(m.label,m.fixed);
+      }
+    });
+    syncFixed(cur().label,cur().fixed);
+  }
   ST.eFixed=null;saveLocal();
   requestAnimationFrame(function(){updHdr();renderFixos();});
 }
