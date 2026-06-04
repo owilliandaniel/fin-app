@@ -469,9 +469,9 @@ function renderResumo(){
   if(!entries.length)html+='<div style="text-align:center;padding:16px 0;color:#D1D5DB;font-size:13px">Nenhum gasto ainda. Use o chat 💬</div>';
   else{
     entries.forEach(function(e){
-      html+='<div class="row-item"><div style="display:flex;align-items:center;gap:8px"><div style="width:8px;height:8px;border-radius:50%;background:'+e.category.color+';flex-shrink:0"></div><div><div style="font-size:13px;color:#111827">'+e.label+'</div><div style="font-size:10px;color:#9CA3AF">'+e.category.name+' · '+e.ts+'</div></div></div>';
-      if(ST.eEntry===e.id)html+='<div class="edit-row"><input class="edit-input" id="ei-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="eEKey(event,'+e.id+')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svEntry('+e.id+')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canEntry()">✕</button></div>';
-      else html+='<div style="display:flex;align-items:center;gap:6px"><span class="mono" style="font-size:13px;font-weight:500;color:#EF4444">−'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edEntry('+e.id+')">✏️</button><button class="btn-del" onclick="dlEntry('+e.id+')">✕</button></div>';
+      html+='<div class="row-item"><div style="display:flex;align-items:center;gap:8px"><div style="width:8px;height:8px;border-radius:50%;background:'+e.category.color+';flex-shrink:0"></div><div><div style="font-size:13px;color:#111827">'+e.label+'</div><div style="font-size:10px;color:#9CA3AF">'+e.category.name+' · '+niceTs(e)+'</div></div></div>';
+      if(String(ST.eEntry)===String(e.id))html+='<div class="edit-row"><input class="edit-input" id="ei-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="eEKey(event,\''+e.id+'\')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svEntry(\''+e.id+'\')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canEntry()">✕</button></div>';
+      else html+='<div style="display:flex;align-items:center;gap:6px"><span class="mono" style="font-size:13px;font-weight:500;color:#EF4444">−'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edEntry(\''+e.id+'\')">✏️</button><button class="btn-del" onclick="dlEntry(\''+e.id+'\')">✕</button></div>';
       html+='</div>';
     });
     html+='<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:1px solid #E5E7EB"><span style="font-size:13px;font-weight:600">Total</span><span class="mono" style="font-size:13px;font-weight:700;color:#EF4444">'+fmt(c.sp)+'</span></div>';
@@ -485,17 +485,27 @@ function renderResumo(){
   document.getElementById('resumo-content').innerHTML=html;
   if(ST.eEntry){var i=document.getElementById('ei-'+ST.eEntry);if(i){i.focus();i.select();}}
 }
+function niceTs(e){
+  var t=e.ts||'';
+  if(/^\d{1,2}:\d{2}$/.test(String(t)))return t; // já é HH:MM
+  var d=new Date(e.date||t);
+  if(!isNaN(d.getTime()))return('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2);
+  return t;
+}
 function edEntry(id){ST.eEntry=id;renderResumo();}
 function canEntry(){ST.eEntry=null;renderResumo();}
 function eEKey(e,id){if(e.key==='Enter')svEntry(id);if(e.key==='Escape')canEntry();}
-function svEntry(id){
+async function svEntry(id){
   var i=document.getElementById('ei-'+id);if(!i)return;
   var n=pAmt(i.value);if(n<=0)return;
-  cur().entries=cur().entries.map(function(x){return x.id===id?Object.assign({},x,{amount:n}):x;});
+  var updated=null;
+  cur().entries=cur().entries.map(function(x){if(String(x.id)===String(id)){updated=Object.assign({},x,{amount:n});return updated;}return x;});
   ST.eEntry=null;saveLocal();
   requestAnimationFrame(function(){updHdr();renderResumo();});
+  // persiste no Sheet: remove a linha antiga e regrava com o mesmo id
+  if(updated){await callScript({action:'delete',id:String(updated.id)});appendRow(updated,cur().label);}
 }
-function dlEntry(id){cur().entries=cur().entries.filter(function(x){return x.id!==id;});deleteRow(id);updHdr();renderResumo();}
+function dlEntry(id){cur().entries=cur().entries.filter(function(x){return String(x.id)!==String(id);});deleteRow(id);updHdr();renderResumo();}
 
 function renderFixos(){
   var c=cmp(ST.mi),m=cur();
