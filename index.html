@@ -112,6 +112,8 @@
       </div>
       <button class="btn-primary" onclick="saveConfig()">Salvar e conectar</button>
       <button class="btn-secondary" onclick="useDemoMode()">Usar sem planilha (modo demo)</button>
+      <div style="height:1px;background:#E5E7EB;margin:16px 0"></div>
+      <button class="btn-secondary" style="color:#EF4444;border-color:#FCA5A5" onclick="wipeAll()">🗑️ Apagar tudo (todos os meses)</button>
     </div>
   </div>
 
@@ -308,6 +310,34 @@ async function syncCard(c){
   callScript({action:'append',date:'',label:'__card__',category:JSON.stringify(c),amount:c.limite||0,month:'',id:id});
 }
 function syncAllCards(){CARDS.forEach(function(c){syncCard(c);});}
+
+// apaga TUDO (gastos, fixos, salários, cartões) em todos os meses — local e no Sheet (todos os aparelhos)
+async function wipeAll(){
+  if(!confirm('Apagar TODOS os dados de TODOS os meses (gastos, fixos, salários e cartões)?\n\nIsso apaga também na planilha — some de todos os aparelhos. Não dá pra desfazer.'))return;
+  if(!confirm('Tem certeza mesmo? Última chance.'))return;
+  setSd('syncing');showToast('Apagando tudo…');
+  // 1) apaga todas as linhas da planilha
+  if(!CFG.demoMode&&CFG.scriptUrl){
+    try{
+      var base=CFG.scriptUrl.split('?')[0];
+      var r=await fetchT(base+'?data='+encodeURIComponent(JSON.stringify({action:'read'}))+'&_='+Date.now(),{method:'GET',redirect:'follow',cache:'no-store'});
+      var res=JSON.parse(await r.text());
+      if(res&&res.rows){for(var i=0;i<res.rows.length;i++){if(res.rows[i].id)await callScript({action:'delete',id:String(res.rows[i].id)});}}
+    }catch(e){}
+  }
+  // 2) limpa o localStorage
+  for(var j=0;j<ST.months.length;j++)localStorage.removeItem('fin_m'+j);
+  localStorage.removeItem('fin_cards');
+  localStorage.setItem('fin_inc_migrated','1');
+  localStorage.setItem('fin_cards_migrated','1');
+  // 3) reseta o estado: tudo vazio (sem presets de fixos)
+  ST.months=ML.map(function(lbl,i){return{label:lbl,income:0,fixed:[],entries:[]};});
+  ST.mi=0;ST.eFixed=null;ST.eEntry=null;ST.eInc=false;ST.addFix=false;ST.eCard=null;
+  CARDS=[{key:'santander',name:'Santander',limite:0,ocupado:0,parcelas:0,items:[]},{key:'inter',name:'Inter',limite:0,ocupado:0,parcelas:0,items:[]}];
+  saveLocal();saveCards();syncAllCards();
+  setSd('ok');showToast('Tudo apagado. Pode lançar de novo.');closeConfig();
+  ST.panel='chat';switchPanel('chat');initApp();
+}
 
 function parseMiFromRow(row){
   // tenta normMonth no campo mês
