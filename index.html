@@ -291,7 +291,10 @@ async function loadRemote(){
         if(incMi>=0)ST.months[incMi].income=parseFloat(row.amount)||0;
         return;
       }
-      var mi=ML.indexOf(normMonth(row.month));if(mi<0)return;
+      var mi=ML.indexOf(normMonth(row.month));
+      // fallback: infere o mês pela data da transação (dd/mm/yyyy) se o campo mês não parsear
+      if(mi<0&&row.date){var dp=row.date.match(/(\d{2})\/(\d{2})\/(\d{4})/);if(dp){var mn=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];mi=ML.indexOf(mn[parseInt(dp[2])]+'/'+dp[3]);}}
+      if(mi<0)return;
       ST.months[mi].entries.push({id:row.id||String(Date.now()),date:row.date,label:row.label,category:{name:row.category,color:catCol(row.category)},amount:parseFloat(row.amount)||0,ts:row.date});
     });
     // merge do localStorage: fixed sempre; income e entries como fallback se a planilha não trouxe
