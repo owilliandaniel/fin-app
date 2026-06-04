@@ -274,8 +274,10 @@ async function loadRemote(){
       if(row.label==='__income__'){ST.months[mi].income=parseFloat(row.amount)||0;return;}
       ST.months[mi].entries.push({id:row.id||String(Date.now()),date:row.date,label:row.label,category:{name:row.category,color:catCol(row.category)},amount:parseFloat(row.amount)||0,ts:row.date});
     });
-    // fixos overrides from local (income already loaded from sheet above)
-    ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(d.fixed)m.fixed=d.fixed;}});
+    // merge do localStorage: fixed sempre; income só como fallback se a planilha não tiver
+    ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(m.income===0&&d.income>0)m.income=d.income;if(d.fixed)m.fixed=d.fixed;}});
+    // migração única: sobe salários já salvos no localStorage para a planilha
+    if(!localStorage.getItem('fin_inc_migrated')){localStorage.setItem('fin_inc_migrated','1');ST.months.forEach(function(m){if(m.income>0)saveIncome(m.label,m.income);});}
   } else {
     loadLocal();
   }
@@ -436,7 +438,7 @@ function renderFixos(){
   var html='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">Salário — '+m.label+'</div>';
   if(!ST.eInc)html+='<button style="font-size:11px;padding:3px 10px;border-radius:6px;border:.5px solid #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="edInc()">✏️ Editar</button>';
   html+='</div>';
-  if(ST.eInc)html+='<div class="edit-row"><input class="edit-input" id="inc-inp" type="text" inputmode="decimal" value="'+m.income+'" onkeydown="incKey(event)" onblur="svIncOnBlur()"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svInc()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canInc()">✕</button></div>';
+  if(ST.eInc)html+='<div><div class="edit-row" style="margin-bottom:6px"><input class="edit-input" id="inc-inp" type="text" inputmode="decimal" value="'+m.income+'" onkeydown="incKey(event)" onblur="svIncOnBlur()"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svInc()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canInc()">✕</button></div><label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#6B7280;cursor:pointer"><input type="checkbox" id="inc-all" style="width:14px;height:14px;cursor:pointer"> Aplicar a todos os meses</label></div>';
   else html+='<div class="mono" style="font-size:20px;font-weight:700;color:'+(m.income>0?'#10B981':'#9CA3AF')+'">'+(m.income>0?fmt(m.income):'não lançado')+'</div>';
   if(m.income>0)html+='<div style="height:1px;background:#F3F4F6;margin:8px 0"></div><div style="display:flex;justify-content:space-between"><div><div style="font-size:10px;color:#9CA3AF">Total fixos</div><div class="mono" style="font-size:14px;font-weight:600;color:#EF4444">−'+fmt(c.tf)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:#9CA3AF">Sobra variável</div><div class="mono" style="font-size:14px;font-weight:700;color:#10B981">'+fmt(c.bv||0)+'</div></div></div>';
   html+='</div><div class="card"><div class="card-title">Contas fixas</div>';
@@ -469,21 +471,32 @@ function svFixed(id){
 function edInc(){ST.eInc=true;renderFixos();}
 function canInc(){ST.eInc=false;renderFixos();}
 function incKey(e){if(e.key==='Enter')svInc();if(e.key==='Escape')canInc();}
+function applyIncome(n){
+  var all=document.getElementById('inc-all')&&document.getElementById('inc-all').checked;
+  if(all){
+    ST.months.forEach(function(m){m.income=n;});
+    saveLocal();
+    ST.months.forEach(function(m){saveIncome(m.label,n);});
+    showToast('Salário aplicado a todos os meses ✓');
+  }else{
+    cur().income=n;
+    saveLocal();
+    saveIncome(cur().label,n);
+  }
+  ST.eInc=false;
+  requestAnimationFrame(function(){updHdr();renderPills();renderFixos();});
+}
 function svInc(){
   var i=document.getElementById('inc-inp');if(!i)return;
   var n=pAmt(i.value);if(n<=0)return;
-  cur().income=n;ST.eInc=false;saveLocal();
-  saveIncome(cur().label,n);
-  requestAnimationFrame(function(){updHdr();renderFixos();});
+  applyIncome(n);
 }
 function svIncOnBlur(){
-  // iOS "Done" key fires blur, not keydown-Enter — auto-save on blur if still editing
+  // iOS "Done" key fires blur, não keydown-Enter — auto-salva no blur se ainda editando
   if(!ST.eInc)return;
   var i=document.getElementById('inc-inp');if(!i)return;
   var n=pAmt(i.value);if(n<=0)return;
-  cur().income=n;ST.eInc=false;saveLocal();
-  saveIncome(cur().label,n);
-  requestAnimationFrame(function(){updHdr();renderFixos();});
+  applyIncome(n);
 }
 
 function renderAnual(){
