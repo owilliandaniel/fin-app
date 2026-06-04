@@ -516,34 +516,36 @@ async function send(){
     var clean=text.replace(/(\d+)\s*x\b/i,' ').replace(/(\d+)\s*(?:vezes|parcelas)\b/i,' ');
     var lb=pMsg(clean);
     var label=(lb&&lb.label)?lb.label:dCat(text.toLowerCase()).name;
-    if(card){
-      // compra no CARTÃO: registra item com detalhes na lista do cartão (não vira gasto variável do mês)
-      card.items=card.items||[];
-      if(inst){
-        card.parcelas+=inst.total;
-        card.items.push({id:Date.now(),desc:label,per:inst.per,n:inst.n,total:inst.total,kind:'parc',date:toDay()});
-        instReply='💳 '+card.name+' · '+label+': '+inst.n+'x de '+fmt(inst.per)+' (total '+fmt(inst.total)+') em parcelas.\nLivre no cartão: '+fmt(cardLivre(card));
-      }else{
-        card.ocupado+=parsed.amount;
-        card.items.push({id:Date.now(),desc:label,per:parsed.amount,n:1,total:parsed.amount,kind:'vista',date:toDay()});
-        instReply='💳 '+card.name+' · '+label+': '+fmt(parsed.amount)+' ocupado.\nLivre no cartão: '+fmt(cardLivre(card));
-      }
-      syncCard(card);
-    }else if(inst){
-      // parcelado FORA do cartão: entra em GASTOS FIXOS, uma parcela por mês, avisando quantas faltam
+    if(inst){
+      // PARCELADO (cartão ou não): SEMPRE entra nos Gastos fixos, uma parcela por mês, avisando quantas faltam
       var per=inst.per;
       var first=Math.round((inst.total-per*(inst.n-1))*100)/100;
       var made=0;
       for(var k=0;k<inst.n;k++){
         var tmi=ST.mi+k;if(tmi>=ST.months.length)break;
         var rem=inst.n-1-k; // quantas faltam DEPOIS desta
-        var nt=(k+1)+'/'+inst.n+(rem>0?' · faltam '+rem:' · última ✓');
+        var nt=(k+1)+'/'+inst.n+(card?' · '+card.name:'')+(rem>0?' · faltam '+rem:' · última ✓');
         var maxId=ST.months[tmi].fixed.reduce(function(s,e){return Math.max(s,Number(e.id)||0);},0);
         ST.months[tmi].fixed.push({id:maxId+1,name:label,amount:k===0?first:per,note:nt,parcela:true});
         made++;
       }
       saveLocal();
       instReply='📋 '+label+' parcelado em '+inst.n+'x de '+fmt(per)+' (total '+fmt(inst.total)+') nos Gastos fixos.\n'+made+' parcela(s) a partir de '+cur().label+'.';
+      // se foi num cartão, também registra na lista do cartão e no limite
+      if(card){
+        card.items=card.items||[];
+        card.parcelas+=inst.total;
+        card.items.push({id:Date.now(),desc:label,per:inst.per,n:inst.n,total:inst.total,kind:'parc',date:toDay()});
+        syncCard(card);
+        instReply+='\n💳 '+card.name+': +'+fmt(inst.total)+' em parcelas. Livre: '+fmt(cardLivre(card));
+      }
+    }else if(card){
+      // à vista no CARTÃO: vai pro cartão (ocupado), não vira gasto variável do mês
+      card.items=card.items||[];
+      card.ocupado+=parsed.amount;
+      card.items.push({id:Date.now(),desc:label,per:parsed.amount,n:1,total:parsed.amount,kind:'vista',date:toDay()});
+      syncCard(card);
+      instReply='💳 '+card.name+' · '+label+': '+fmt(parsed.amount)+' ocupado.\nLivre no cartão: '+fmt(cardLivre(card));
     }else{
       newE=Object.assign({},parsed,{id:Date.now(),date:toDay(),ts:now});
       cur().entries.push(newE);appendRow(newE,cur().label);
