@@ -575,9 +575,10 @@ async function send(){
     saveLocal();updHdr();if(ST.panel!=='chat')renderPanel();
     reply='🧹 Apaguei '+nDel+' parcela(s) de todos os meses. Pode lançar de novo.';
   }
-  else if(low.match(/ajuda|help/)){reply='💬 "gastei 50 no mercado"\n"300 em 3x no mercado" (total ÷ 3)\n"3x 100 no mercado" (3 de 100)\n"gastei 80 no cartão santander"\n"apagar parcelas" (limpa todas)';}
+  else if(low.match(/(apagar|limpar|resetar|zerar).*(tudo|todos|geral)/)){wipeAll();reply='';}
+  else if(low.match(/ajuda|help/)){reply='💬 "gastei 50 no mercado"\n"300 em 3x no mercado" (total ÷ 3)\n"3x 100 no mercado" (3 de 100)\n"gastei 80 no cartão santander"\n"apagar parcelas" / "apagar tudo"';}
   else{reply='Não entendi 🤔 Tente: "gastei 80 de delivery"\nOu: "quanto posso gastar?"';}
-  addMsg('bot',reply);updHdr();
+  if(reply)addMsg('bot',reply);updHdr();
 }
 
 function switchPanel(p){
