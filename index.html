@@ -19,7 +19,7 @@
     input,textarea,select{font-family:inherit}
     textarea{resize:none}
     ::-webkit-scrollbar{display:none}
-    #header{background:#111827;padding:env(safe-area-inset-top,12px) 16px 0;flex-shrink:0}
+    #header{background:#111827;padding:env(safe-area-inset-top,12px) 16px 0;flex-shrink:0;-webkit-transform:translateZ(0);transform:translateZ(0);will-change:transform}
     .hdr-top{display:flex;justify-content:space-between;align-items:flex-start;padding-top:12px;margin-bottom:8px}
     .hdr-title{font-size:17px;font-weight:700;color:#F9FAFB;letter-spacing:-.02em}
     .hdr-sub{font-size:11px;color:#6B7280;margin-top:1px}
@@ -83,10 +83,10 @@
     .badge.done{background:#E8F4ED;color:#1A6635}
     .edit-row{display:flex;align-items:center;gap:4px}
     .edit-input{width:90px;font-size:13px;padding:3px 7px;border-radius:6px;border:1px solid #3B82F6;font-family:'Courier New',monospace;text-align:right;outline:none}
-    .btn-ok{font-size:11px;padding:3px 8px;border-radius:6px;border:none;background:#111827;color:#FFF;cursor:pointer}
-    .btn-x{font-size:11px;padding:3px 6px;border-radius:6px;border:.5px solid #D1D5DB;background:transparent;color:#6B7280;cursor:pointer}
-    .btn-edit{background:none;border:none;cursor:pointer;color:#9CA3AF;font-size:12px;padding:0 2px}
-    .btn-del{background:none;border:none;cursor:pointer;color:#D1D5DB;font-size:12px;padding:0 2px}
+    .btn-ok{font-size:11px;padding:3px 8px;border-radius:6px;border:none;background:#111827;color:#FFF;cursor:pointer;touch-action:manipulation}
+    .btn-x{font-size:11px;padding:3px 6px;border-radius:6px;border:.5px solid #D1D5DB;background:transparent;color:#6B7280;cursor:pointer;touch-action:manipulation}
+    .btn-edit{background:none;border:none;cursor:pointer;color:#9CA3AF;font-size:12px;padding:0 2px;touch-action:manipulation}
+    .btn-del{background:none;border:none;cursor:pointer;color:#D1D5DB;font-size:12px;padding:0 2px;touch-action:manipulation}
     .anual-head{display:grid;grid-template-columns:72px 1fr 1fr 1fr;padding:8px 12px;background:#F7F7F5;font-size:10px;color:#9CA3AF;border-bottom:.5px solid #F0F0F0}
     .anual-row{display:grid;grid-template-columns:72px 1fr 1fr 1fr;padding:9px 12px;border-bottom:.5px solid #F3F4F6;cursor:pointer;transition:background .1s}
     .anual-row:last-child{border-bottom:none}
@@ -393,7 +393,7 @@ function renderResumo(){
   else{
     entries.forEach(function(e){
       html+='<div class="row-item"><div style="display:flex;align-items:center;gap:8px"><div style="width:8px;height:8px;border-radius:50%;background:'+e.category.color+';flex-shrink:0"></div><div><div style="font-size:13px;color:#111827">'+e.label+'</div><div style="font-size:10px;color:#9CA3AF">'+e.category.name+' · '+e.ts+'</div></div></div>';
-      if(ST.eEntry===e.id)html+='<div class="edit-row"><input class="edit-input" id="ei-'+e.id+'" value="'+e.amount+'" onkeydown="eEKey(event,'+e.id+')"><button class="btn-ok" onclick="svEntry('+e.id+')">OK</button><button class="btn-x" onclick="canEntry()">✕</button></div>';
+      if(ST.eEntry===e.id)html+='<div class="edit-row"><input class="edit-input" id="ei-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="eEKey(event,'+e.id+')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svEntry('+e.id+')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canEntry()">✕</button></div>';
       else html+='<div style="display:flex;align-items:center;gap:6px"><span class="mono" style="font-size:13px;font-weight:500;color:#EF4444">−'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edEntry('+e.id+')">✏️</button><button class="btn-del" onclick="dlEntry('+e.id+')">✕</button></div>';
       html+='</div>';
     });
@@ -411,7 +411,13 @@ function renderResumo(){
 function edEntry(id){ST.eEntry=id;renderResumo();}
 function canEntry(){ST.eEntry=null;renderResumo();}
 function eEKey(e,id){if(e.key==='Enter')svEntry(id);if(e.key==='Escape')canEntry();}
-function svEntry(id){var i=document.getElementById('ei-'+id);if(!i)return;var n=pAmt(i.value);if(n<=0)return;cur().entries=cur().entries.map(function(x){return x.id===id?Object.assign({},x,{amount:n}):x;});ST.eEntry=null;saveLocal();updHdr();renderResumo();}
+function svEntry(id){
+  var i=document.getElementById('ei-'+id);if(!i)return;
+  var n=pAmt(i.value);if(n<=0)return;
+  cur().entries=cur().entries.map(function(x){return x.id===id?Object.assign({},x,{amount:n}):x;});
+  ST.eEntry=null;saveLocal();
+  requestAnimationFrame(function(){updHdr();renderResumo();});
+}
 function dlEntry(id){cur().entries=cur().entries.filter(function(x){return x.id!==id;});deleteRow(id);updHdr();renderResumo();}
 
 function renderFixos(){
@@ -419,7 +425,7 @@ function renderFixos(){
   var html='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">Salário — '+m.label+'</div>';
   if(!ST.eInc)html+='<button style="font-size:11px;padding:3px 10px;border-radius:6px;border:.5px solid #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="edInc()">✏️ Editar</button>';
   html+='</div>';
-  if(ST.eInc)html+='<div class="edit-row"><input class="edit-input" id="inc-inp" value="'+m.income+'" onkeydown="incKey(event)"><button class="btn-ok" onclick="svInc()">OK</button><button class="btn-x" onclick="canInc()">✕</button></div>';
+  if(ST.eInc)html+='<div class="edit-row"><input class="edit-input" id="inc-inp" type="text" inputmode="decimal" value="'+m.income+'" onkeydown="incKey(event)" onblur="svIncOnBlur()"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svInc()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canInc()">✕</button></div>';
   else html+='<div class="mono" style="font-size:20px;font-weight:700;color:'+(m.income>0?'#10B981':'#9CA3AF')+'">'+(m.income>0?fmt(m.income):'não lançado')+'</div>';
   if(m.income>0)html+='<div style="height:1px;background:#F3F4F6;margin:8px 0"></div><div style="display:flex;justify-content:space-between"><div><div style="font-size:10px;color:#9CA3AF">Total fixos</div><div class="mono" style="font-size:14px;font-weight:600;color:#EF4444">−'+fmt(c.tf)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:#9CA3AF">Sobra variável</div><div class="mono" style="font-size:14px;font-weight:700;color:#10B981">'+fmt(c.bv||0)+'</div></div></div>';
   html+='</div><div class="card"><div class="card-title">Contas fixas</div>';
@@ -427,7 +433,7 @@ function renderFixos(){
     var isC=e.name==='Santander'||e.name==='Inter';
     var cItems=e.name==='Santander'?SI:e.name==='Inter'?II:[];
     html+='<div style="border-bottom:'+(i<m.fixed.length-1?'.5px solid #F3F4F6':'none')+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><div><span style="font-size:13px;color:#374151;font-weight:'+(isC?600:400)+'">'+e.name+'</span>'+(e.note?'<span class="badge'+(e.note.includes('✓')?' done':'')+'">'+e.note+'</span>':'')+' </div>';
-    if(ST.eFixed===e.id)html+='<div class="edit-row"><input class="edit-input" id="fi-'+e.id+'" value="'+e.amount+'" onkeydown="fKey(event,'+e.id+')"><button class="btn-ok" onclick="svFixed('+e.id+')">OK</button><button class="btn-x" onclick="canFixed()">✕</button></div>';
+    if(ST.eFixed===e.id)html+='<div class="edit-row"><input class="edit-input" id="fi-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="fKey(event,'+e.id+')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svFixed('+e.id+')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canFixed()">✕</button></div>';
     else html+='<div style="display:flex;align-items:center;gap:8px"><span class="mono" style="font-size:13px;color:#6B7280">'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edFixed('+e.id+')">✏️</button></div>';
     html+='</div>';
     if(isC)cItems.forEach(function(ci,j){html+='<div style="display:flex;justify-content:space-between;padding:3px 0 3px 14px;border-bottom:'+(j<cItems.length-1?'.5px dashed #F3F4F6':'none')+'"><span style="font-size:11px;color:#9CA3AF">'+ci.desc+'</span><span class="mono" style="font-size:11px;color:#9CA3AF">'+fmt(ci.amount)+'</span></div>';});
@@ -442,11 +448,32 @@ function renderFixos(){
 function edFixed(id){ST.eFixed=id;renderFixos();}
 function canFixed(){ST.eFixed=null;renderFixos();}
 function fKey(e,id){if(e.key==='Enter')svFixed(id);if(e.key==='Escape')canFixed();}
-function svFixed(id){var i=document.getElementById('fi-'+id);if(!i)return;var n=pAmt(i.value);if(n<=0)return;cur().fixed=cur().fixed.map(function(x){return x.id===id?Object.assign({},x,{amount:n}):x;});ST.eFixed=null;saveLocal();updHdr();renderFixos();}
+function svFixed(id){
+  var i=document.getElementById('fi-'+id);if(!i)return;
+  var n=pAmt(i.value);if(n<=0)return;
+  cur().fixed=cur().fixed.map(function(x){return x.id===id?Object.assign({},x,{amount:n}):x;});
+  ST.eFixed=null;saveLocal();
+  requestAnimationFrame(function(){updHdr();renderFixos();});
+}
 function edInc(){ST.eInc=true;renderFixos();}
 function canInc(){ST.eInc=false;renderFixos();}
 function incKey(e){if(e.key==='Enter')svInc();if(e.key==='Escape')canInc();}
-function svInc(){var i=document.getElementById('inc-inp');if(!i)return;var n=pAmt(i.value);if(n<=0)return;cur().income=n;ST.eInc=false;saveLocal();updHdr();renderFixos();}
+function svInc(){
+  var i=document.getElementById('inc-inp');if(!i)return;
+  var n=pAmt(i.value);if(n<=0)return;
+  cur().income=n;ST.eInc=false;saveLocal();
+  // requestAnimationFrame ensures iOS Safari flushes the composited GPU layer
+  // (keyboard-dismiss viewport resize can stale the header paint otherwise)
+  requestAnimationFrame(function(){updHdr();renderFixos();});
+}
+function svIncOnBlur(){
+  // iOS "Done" key fires blur, not keydown-Enter — auto-save on blur if still editing
+  if(!ST.eInc)return;
+  var i=document.getElementById('inc-inp');if(!i)return;
+  var n=pAmt(i.value);if(n<=0)return;
+  cur().income=n;ST.eInc=false;saveLocal();
+  requestAnimationFrame(function(){updHdr();renderFixos();});
+}
 
 function renderAnual(){
   document.getElementById('anual-rows').innerHTML=ML.map(function(lbl,i){
