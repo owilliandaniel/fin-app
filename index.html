@@ -137,6 +137,7 @@
       <button class="tab active" onclick="switchPanel('chat')">💬 Chat</button>
       <button class="tab" onclick="switchPanel('resumo')">📊 Resumo</button>
       <button class="tab" onclick="switchPanel('fixos')">📋 Fixos</button>
+      <button class="tab" onclick="switchPanel('cartoes')">💳 Cartões</button>
       <button class="tab" onclick="switchPanel('anual')">📅 Anual</button>
       <button class="tab" onclick="openConfig()" style="flex:.6">⚙️</button>
     </div>
@@ -160,6 +161,7 @@
 
   <div id="panel-resumo" class="panel hidden"><div id="resumo-content"></div></div>
   <div id="panel-fixos" class="panel hidden"><div id="fixos-content"></div></div>
+  <div id="panel-cartoes" class="panel hidden"><div id="cartoes-content"></div></div>
   <div id="panel-anual" class="panel hidden">
     <div class="card" style="padding:0;overflow:hidden">
       <div class="anual-head"><span>Mês</span><span style="text-align:right">Fixos</span><span style="text-align:right">Variável</span><span style="text-align:right">Saldo</span></div>
@@ -224,8 +226,20 @@ var CATS=[{name:'Mercado',color:'#10B981',keys:['mercado','feira','supermercado'
 function dCat(t){var l=t.toLowerCase();for(var c of CATS)if(c.keys.some(function(k){return l.includes(k)}))return c;return CATS[CATS.length-1];}
 function catCol(n){var c=CATS.find(function(x){return x.name===n});return c?c.color:'#6B7280';}
 
-var ST={mi:0,months:ML.map(function(lbl,i){return{label:lbl,income:0,fixed:BF[i].map(function(f){return Object.assign({},f)}),entries:[]};}),eFixed:null,eEntry:null,eInc:false,addFix:false,panel:'chat'};
+var ST={mi:0,months:ML.map(function(lbl,i){return{label:lbl,income:0,fixed:BF[i].map(function(f){return Object.assign({},f)}),entries:[]};}),eFixed:null,eEntry:null,eInc:false,addFix:false,eCard:null,panel:'chat'};
 function cur(){return ST.months[ST.mi];}
+
+// === Cartões: limite revolvente (global, não por mês) ===
+// Livre = limite − ocupado − parcelas a vencer
+var CARDS=[];
+function defCards(){return[
+  {key:'santander',name:'Santander',limite:6707.99,ocupado:2167.75,parcelas:1676.24},
+  {key:'inter',name:'Inter',limite:0,ocupado:0,parcelas:0}
+];}
+function loadCards(){var s=localStorage.getItem('fin_cards');try{CARDS=s?JSON.parse(s):defCards();}catch(e){CARDS=defCards();}}
+function saveCards(){localStorage.setItem('fin_cards',JSON.stringify(CARDS));}
+function cardLivre(c){return c.limite-c.ocupado-c.parcelas;}
+function findCard(txt){var l=String(txt).toLowerCase();for(var i=0;i<CARDS.length;i++){if(l.indexOf(CARDS[i].name.toLowerCase())>=0||l.indexOf(CARDS[i].key)>=0)return CARDS[i];}return null;}
 
 function saveLocal(){ST.months.forEach(function(m,i){localStorage.setItem('fin_m'+i,JSON.stringify({income:m.income,entries:m.entries,fixed:m.fixed}));});}
 function loadLocal(){ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);m.income=d.income!=null?d.income:m.income;m.entries=d.entries||[];m.fixed=d.fixed||m.fixed;}});}
@@ -357,7 +371,7 @@ function pMsg(text){
   if(!m)return null;
   var amount=parseFloat(m[0].replace(/\./g,'').replace(',','.'));
   if(!amount||amount<=0||amount>99999)return null;
-  var desc=text.replace(m[0],'').replace(/gastei|paguei|comprei|foi|de|no|na|em|com|pro|pra|um|uma/gi,' ').replace(/r\$\s*/gi,'').replace(/\s+/g,' ').trim();
+  var desc=text.replace(m[0],'').replace(/\bcart(ão|ao)\b|\bno cart(ão|ao)\b|\b\d+\s*x\b|parcelad[oa]/gi,' ').replace(/santander|inter/gi,' ').replace(/gastei|paguei|comprei|foi|de|no|na|em|com|pro|pra|um|uma/gi,' ').replace(/r\$\s*/gi,'').replace(/\s+/g,' ').trim();
   var cat=dCat(c);var label=desc.length>2?desc:cat.name;
   return{amount:amount,label:label.charAt(0).toUpperCase()+label.slice(1),category:cat};
 }
@@ -423,16 +437,24 @@ async function send(){
   var inp=document.getElementById('msg-input'),text=inp.value.trim();if(!text)return;
   inp.value='';onInputChange();addMsg('user',text);showTyping();
   await new Promise(function(r){setTimeout(r,350);});hideTyping();
-  var parsed=pMsg(text),newE=null;
+  var parsed=pMsg(text),newE=null,cardMsg='';
   if(parsed){
     newE=Object.assign({},parsed,{id:Date.now(),date:toDay(),ts:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
     cur().entries.push(newE);appendRow(newE,cur().label);
+    // cartão: aplica em Ocupado (à vista) ou Parcelas a vencer (parcelado)
+    var card=findCard(text);
+    if(card){
+      var parc=/\b\d+\s*x\b|parcel|vezes/i.test(text);
+      if(parc)card.parcelas+=newE.amount;else card.ocupado+=newE.amount;
+      saveCards();
+      cardMsg='\n\n💳 '+card.name+': '+(parc?'+'+fmt(newE.amount)+' em parcelas':'+'+fmt(newE.amount)+' ocupado')+'.\nLivre no cartão: '+fmt(cardLivre(card))+'.';
+    }
     if(ST.panel!=='chat')renderPanel();
   }
   var c=cmp(ST.mi),low=text.toLowerCase(),reply='';
   if(newE){
     var e=c.rem>=c.bv*.5?'✅':c.rem>=c.bv*.2?'⚠️':'🔴';
-    reply=e+' Registrei '+fmt(newE.amount)+' em '+newE.label+'.\n\nSobra: '+fmt(c.rem)+' ('+Math.round(100-c.pct)+'%).\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.';
+    reply=e+' Registrei '+fmt(newE.amount)+' em '+newE.label+'.\n\nSobra: '+fmt(c.rem)+' ('+Math.round(100-c.pct)+'%).\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.'+cardMsg;
   }else if(low.match(/quanto (posso|tenho|sobrou|resta|falta)|saldo|resumo|status/)){
     var em=c.pct<60?'😊':c.pct<85?'😐':'😬';
     reply=em+' '+cur().label+':\n\nOrçamento: '+(c.bv!=null?fmt(c.bv):'sem salário')+'\nGasto: '+fmt(c.sp)+'\nLivre: '+(c.rem!=null?fmt(c.rem):'—')+'\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.';
@@ -445,13 +467,13 @@ async function send(){
 
 function switchPanel(p){
   ST.panel=p;
-  ['chat','resumo','fixos','anual'].forEach(function(id){
+  ['chat','resumo','fixos','cartoes','anual'].forEach(function(id){
     var el=document.getElementById('panel-'+id);if(el)el.classList.toggle('hidden',id!==p);
   });
-  document.querySelectorAll('.tab').forEach(function(t,i){t.classList.toggle('active',['chat','resumo','fixos','anual','cfg'][i]===p);});
+  document.querySelectorAll('.tab').forEach(function(t,i){t.classList.toggle('active',['chat','resumo','fixos','cartoes','anual','cfg'][i]===p);});
   renderPanel();
 }
-function renderPanel(){if(ST.panel==='resumo')renderResumo();else if(ST.panel==='fixos')renderFixos();else if(ST.panel==='anual')renderAnual();}
+function renderPanel(){if(ST.panel==='resumo')renderResumo();else if(ST.panel==='fixos')renderFixos();else if(ST.panel==='cartoes')renderCartoes();else if(ST.panel==='anual')renderAnual();}
 
 function renderResumo(){
   var c=cmp(ST.mi),m=cur(),entries=m.entries;
@@ -552,6 +574,48 @@ function dlFixed(id){
   cur().fixed=cur().fixed.filter(function(x){return String(x.id)!==String(id);});
   saveLocal();updHdr();renderFixos();
 }
+
+function renderCartoes(){
+  var html='<div style="font-size:11px;color:#9CA3AF;margin:2px 4px 10px">Livre = Limite − Ocupado − Parcelas a vencer</div>';
+  CARDS.forEach(function(c){
+    var livre=cardLivre(c);
+    var pctUsed=c.limite>0?Math.min(100,(c.ocupado+c.parcelas)/c.limite*100):0;
+    var col=pctUsed>85?'#EF4444':pctUsed>60?'#F59E0B':'#10B981';
+    html+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">💳 '+c.name+'</div>';
+    if(ST.eCard===c.key)html+='<button class="btn-x" onmousedown="event.preventDefault()" onclick="canCard()">✕</button>';
+    else html+='<button style="font-size:11px;padding:3px 10px;border-radius:6px;border:.5px solid #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="edCard(\''+c.key+'\')">✏️ Editar</button>';
+    html+='</div>';
+    if(ST.eCard===c.key){
+      html+='<div style="display:flex;flex-direction:column;gap:8px">'
+        +cardField('Limite total','cl-'+c.key,c.limite)
+        +cardField('Ocupado (fatura/uso atual)','co-'+c.key,c.ocupado)
+        +cardField('Parcelas a vencer','cp-'+c.key,c.parcelas)
+        +'<button class="btn-ok" style="align-self:flex-end;padding:6px 18px" onmousedown="event.preventDefault()" onclick="svCard(\''+c.key+'\')">Salvar</button></div>';
+    }else{
+      html+='<div class="mono" style="font-size:22px;font-weight:700;color:'+col+'">'+fmt(livre)+'<span style="font-size:11px;color:#9CA3AF;font-weight:400"> livre</span></div>';
+      html+='<div class="prog-wrap" style="margin:8px 0"><div class="prog-bar" style="width:'+pctUsed+'%;background:'+col+'"></div></div>';
+      html+='<div style="display:flex;justify-content:space-between;font-size:11px;color:#9CA3AF">'
+        +'<span>Limite '+fmt(c.limite)+'</span>'
+        +'<span style="color:#EF4444">Ocupado '+fmt(c.ocupado)+'</span>'
+        +'<span style="color:#F59E0B">Parcelas '+fmt(c.parcelas)+'</span></div>';
+    }
+    html+='</div>';
+  });
+  document.getElementById('cartoes-content').innerHTML=html;
+  if(ST.eCard){var i=document.getElementById('cl-'+ST.eCard);if(i){i.focus();i.select();}}
+}
+function cardField(label,id,val){
+  return'<label style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:#6B7280">'+label
+    +'<input class="edit-input" id="'+id+'" type="text" inputmode="decimal" value="'+val+'" style="max-width:110px;text-align:right" onkeydown="if(event.key===\'Enter\')svCard(\''+id.split('-').slice(1).join('-')+'\')"></label>';
+}
+function edCard(key){ST.eCard=key;renderCartoes();}
+function canCard(){ST.eCard=null;renderCartoes();}
+function svCard(key){
+  var c=CARDS.find(function(x){return x.key===key;});if(!c)return;
+  var gl=function(p){var el=document.getElementById(p+'-'+key);return el?pAmt(el.value):0;};
+  c.limite=gl('cl');c.ocupado=gl('co');c.parcelas=gl('cp');
+  ST.eCard=null;saveCards();renderCartoes();showToast('Cartão atualizado ✓');
+}
 function edFixed(id){ST.eFixed=id;renderFixos();}
 function canFixed(){ST.eFixed=null;renderFixos();}
 function fKey(e,id){if(e.key==='Enter')svFixed(id);if(e.key==='Escape')canFixed();}
@@ -602,7 +666,7 @@ function renderAnual(){
   }).join('');
 }
 
-function initApp(){renderPills();updHdr();clearChat();var m=cur(),c=cmp(0);addMsg('bot',m.income===0?'Oi! 👋 Sou o Fin.\n\nComece lançando o salário de '+m.label+' em Fixos ✏️':'Oi! 👋 Em '+m.label+' você tem '+fmt(c.bv)+' livres.\n\n"gastei 50 no mercado" 💬');}
+function initApp(){loadCards();renderPills();updHdr();clearChat();var m=cur(),c=cmp(0);addMsg('bot',m.income===0?'Oi! 👋 Sou o Fin.\n\nComece lançando o salário de '+m.label+' em Fixos ✏️':'Oi! 👋 Em '+m.label+' você tem '+fmt(c.bv)+' livres.\n\n"gastei 50 no mercado" 💬');}
 
 window.addEventListener('load',function(){
   if(loadCfg()){closeConfig();if(CFG.demoMode){loadLocal();initApp();}else loadRemote();}
