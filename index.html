@@ -169,13 +169,20 @@
 </div>
 <script>
 var CFG={scriptUrl:'',demoMode:false};
-// normaliza mês retornado pelo Sheets que auto-formata "Jun/2026" → "jun./2026"
+// normaliza mês retornado pelo Sheets — trata ISO ("2026-06-01T..."), texto ("jun./2026") e numérico
 function normMonth(s){
   if(!s)return '';
-  s=String(s);
+  s=String(s).trim();
+  // ISO date: "2026-06-01T00:00:00.000Z" ou "2026-06-01"
+  var iso=s.match(/^(\d{4})-(\d{2})/);
+  if(iso){
+    var names=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    return(names[parseInt(iso[2])]||'')+'/'+iso[1];
+  }
+  // texto: "jun./2026", "Jun/2026", "junho/2026"
   var m=s.match(/([a-zÀ-ɏ]+)\.?\s*[\/\-]?\s*(\d{4})/i);
-  if(!m)return s;
-  return m[1].charAt(0).toUpperCase()+m[1].slice(1,3).toLowerCase()+'/'+m[2];
+  if(m)return m[1].charAt(0).toUpperCase()+m[1].slice(1,3).toLowerCase()+'/'+m[2];
+  return s;
 }
 function loadCfg(){var s=localStorage.getItem('fin_cfg');if(s){CFG=Object.assign(CFG,JSON.parse(s));return true;}return false;}
 function saveConfig(){
@@ -287,8 +294,8 @@ async function loadRemote(){
       var mi=ML.indexOf(normMonth(row.month));if(mi<0)return;
       ST.months[mi].entries.push({id:row.id||String(Date.now()),date:row.date,label:row.label,category:{name:row.category,color:catCol(row.category)},amount:parseFloat(row.amount)||0,ts:row.date});
     });
-    // merge do localStorage: fixed sempre; income só como fallback se a planilha não tiver
-    ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(m.income===0&&d.income>0)m.income=d.income;if(d.fixed)m.fixed=d.fixed;}});
+    // merge do localStorage: fixed sempre; income e entries como fallback se a planilha não trouxe
+    ST.months.forEach(function(m,i){var r=localStorage.getItem('fin_m'+i);if(r){var d=JSON.parse(r);if(m.income===0&&d.income>0)m.income=d.income;if(m.entries.length===0&&d.entries&&d.entries.length>0)m.entries=d.entries;if(d.fixed)m.fixed=d.fixed;}});
     // migração única: sobe salários já salvos no localStorage para a planilha
     if(!localStorage.getItem('fin_inc_migrated')){localStorage.setItem('fin_inc_migrated','1');ST.months.forEach(function(m){if(m.income>0)saveIncome(m.label,m.income);});}
   } else {
@@ -297,7 +304,7 @@ async function loadRemote(){
   setSd('ok');initApp();
 }
 function fmt(v){return'R$\u00a0'+Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
-function fmtK(v){if(Math.abs(v)>=1000)return'R$\u00a0'+(Math.abs(v)/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'k';return fmt(v);}
+function fmtK(v){if(Math.abs(v)>=1000){var k=Math.abs(v)/1000;var dec=k<2?2:1;return'R$\u00a0'+k.toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec})+'k';}return fmt(v);}
 function dLeft(){var t=new Date();return new Date(t.getFullYear(),t.getMonth()+1,0).getDate()-t.getDate();}
 function pAmt(s){return parseFloat(String(s).replace(/\./g,'').replace(',','.'))||0;}
 function toDay(){return new Date().toLocaleDateString('pt-BR');}
