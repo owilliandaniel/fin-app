@@ -118,7 +118,7 @@
   <div id="header">
     <div class="hdr-top">
       <div>
-        <div class="hdr-title">💬 Fin <span id="sync-dot" class="ok"></span> <span onclick="showDbg()" style="font-size:9px;opacity:.45;font-weight:400">v8</span></div>
+        <div class="hdr-title">💬 Fin <span id="sync-dot" class="ok"></span> <span onclick="showDbg()" style="font-size:9px;opacity:.45;font-weight:400">v9</span></div>
         <div class="hdr-sub" id="hdr-sub">carregando...</div>
       </div>
       <div>
@@ -172,15 +172,21 @@
 </div>
 <script>
 var CFG={scriptUrl:'',demoMode:false};
-// normaliza mês retornado pelo Sheets — trata ISO ("2026-06-01T..."), texto ("jun./2026") e numérico
+// normaliza mês retornado pelo Sheets — trata ISO, JS Date toString, texto pt ("jun./2026") e numérico
+var PT_MON=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+var EN_MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
 function normMonth(s){
   if(!s)return '';
   s=String(s).trim();
   // ISO date: "2026-06-01T00:00:00.000Z" ou "2026-06-01"
   var iso=s.match(/^(\d{4})-(\d{2})/);
-  if(iso){
-    var names=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-    return(names[parseInt(iso[2])]||'')+'/'+iso[1];
+  if(iso)return(PT_MON[parseInt(iso[2])]||'')+'/'+iso[1];
+  // JS Date toString do Apps Script: "Mon Jun 01 2026 00:00:00 GMT-0300 (...)"
+  // extrai mês/ano direto do texto (sem new Date) pra não sofrer com fuso
+  if(/GMT|\d{2}:\d{2}:\d{2}/.test(s)){
+    var em=s.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+    var ey=s.match(/\b(\d{4})\b/);
+    if(em&&ey)return PT_MON[EN_MON[em[1].toLowerCase()]]+'/'+ey[1];
   }
   // texto: "jun./2026", "Jun/2026", "junho/2026"
   var m=s.match(/([a-zÀ-ɏ]+)\.?\s*[\/\-]?\s*(\d{4})/i);
