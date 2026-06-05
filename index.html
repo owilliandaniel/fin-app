@@ -586,24 +586,21 @@ async function send(){
         instReply+='\n💳 '+card.name+': +'+fmt(inst.total)+' em '+inst.n+'x. Livre: '+fmt(cardLivre(card));
       }
     }else if(card){
-      // à vista no CARTÃO: entra nos gastos variáveis do próximo mês (pago na fatura) + desconta limite (req 3,4)
+      // à vista no CARTÃO: entra nos gastos variáveis do mês atual + desconta limite do cartão (req 3,4)
       card.items=card.items||[];
       card.ocupado=Math.round((card.ocupado+parsed.amount)*100)/100;
       var cId=Date.now();
       card.items.push({id:cId,desc:label,per:parsed.amount,n:1,total:parsed.amount,kind:'vista',date:toDay()});
       syncCard(card);
-      // lançado em mi+1: pagamento ocorre no mês seguinte (regra: lançamentos pagos no próximo mês)
-      var tmi=Math.min(ST.mi+1,ST.months.length-1);
-      newE={id:cId+1,date:toDay(),label:label,category:parsed.category,amount:parsed.amount,ts:now,_tmi:tmi};
-      ST.months[tmi].entries.push(newE);
-      appendRow(newE,ST.months[tmi].label);
+      newE={id:cId+1,date:toDay(),label:label,category:parsed.category,amount:parsed.amount,ts:now};
+      cur().entries.push(newE);
+      appendRow(newE,cur().label);
       cardMsg='\n💳 '+card.name+' · livre: '+fmt(cardLivre(card));
     }else{
-      // compra à vista sem cartão → gasto variável do próximo mês (pagamento ocorre no próximo mês)
-      var tmi=Math.min(ST.mi+1,ST.months.length-1);
-      newE=Object.assign({},parsed,{id:Date.now(),date:toDay(),ts:now,_tmi:tmi});
-      ST.months[tmi].entries.push(newE);
-      appendRow(newE,ST.months[tmi].label);
+      // compra à vista sem cartão → gasto variável do mês atual (visível imediatamente nos cálculos)
+      newE=Object.assign({},parsed,{id:Date.now(),date:toDay(),ts:now});
+      cur().entries.push(newE);
+      appendRow(newE,cur().label);
     }
     if(ST.panel!=='chat')renderPanel();
   }
@@ -611,9 +608,7 @@ async function send(){
   if(instReply){reply=instReply;}
   else if(newE){
     var e=c.rem!=null&&c.bv>0?(c.rem>=c.bv*.5?'✅':c.rem>=c.bv*.2?'⚠️':'🔴'):'📝';
-    var tgtLbl=ST.months[newE._tmi||ST.mi].label;
-    var nextInfo=newE._tmi&&newE._tmi!==ST.mi?' → pago em '+tgtLbl:'';
-    reply=e+' Registrei '+fmt(newE.amount)+' em '+newE.label+nextInfo+'.\n\nSobra em '+cur().label+': '+(c.rem!=null?fmt(c.rem):'—')+(c.bv>0?' ('+Math.round(100-c.pct)+'%)':'')+'.\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.'+cardMsg;
+    reply=e+' Registrei '+fmt(newE.amount)+' em '+newE.label+'.\n\nSobra: '+(c.rem!=null?fmt(c.rem):'—')+(c.bv>0?' ('+Math.round(100-c.pct)+'%)':'')+'.\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.'+cardMsg;
   }else if(low.match(/quanto (posso|tenho|sobrou|resta|falta)|saldo|resumo|status/)){
     var em=c.pct<60?'😊':c.pct<85?'😐':'😬';
     reply=em+' '+cur().label+':\n\nOrçamento: '+(c.bv!=null?fmt(c.bv):'sem salário')+'\nGasto: '+fmt(c.sp)+'\nLivre: '+(c.rem!=null?fmt(c.rem):'—')+'\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.';
