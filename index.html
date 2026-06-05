@@ -248,7 +248,8 @@ function mlBase(){var p=ML[0].split('/');return parseInt(p[1])*12+MN3.indexOf(p[
 function curMiNow(){var t=new Date();return t.getFullYear()*12+t.getMonth()-mlBase();}
 function itemRemaining(it){var n=it.n||1;var sm=it.startMi!=null?it.startMi:0;var paid=Math.max(0,curMiNow()-sm);return Math.max(0,Math.min(n,n-paid));}
 function cardParcelas(c){return(c.items||[]).reduce(function(s,it){return it.kind==='parc'?s+itemRemaining(it)*it.per:s;},0);}
-function cardLivre(c){return c.limite-c.ocupado-cardParcelas(c);}
+function cardOcupado(c){return Math.round((c.ocupado+cardParcelas(c))*100)/100;}
+function cardLivre(c){return c.limite-cardOcupado(c);}
 function cardKey(name){var b=name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'').slice(0,20)||'cartao';var k=b,i=2;while(CARDS.some(function(c){return c.key===k;})){k=b+i;i++;}return k;}
 function findCard(txt){var l=String(txt).toLowerCase();for(var i=0;i<CARDS.length;i++){if(l.indexOf(CARDS[i].name.toLowerCase())>=0||l.indexOf(CARDS[i].key)>=0)return CARDS[i];}return null;}
 
@@ -707,7 +708,7 @@ function renderFixos(){
   html+='</div>';
   if(ST.eInc)html+='<div><div class="edit-row" style="margin-bottom:6px"><input class="edit-input" id="inc-inp" type="text" inputmode="decimal" value="'+m.income+'" onkeydown="incKey(event)" onblur="svIncOnBlur(event)"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svInc()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canInc()">✕</button></div><label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#6B7280;cursor:pointer"><input type="checkbox" id="inc-all" style="width:14px;height:14px;cursor:pointer"> Aplicar a todos os meses</label></div>';
   else html+='<div class="mono" style="font-size:20px;font-weight:700;color:'+(m.income>0?'#10B981':'#9CA3AF')+'">'+(m.income>0?fmt(m.income):'não lançado')+'</div>';
-  if(m.income>0)html+='<div style="height:1px;background:#F3F4F6;margin:8px 0"></div><div style="display:flex;justify-content:space-between"><div><div style="font-size:10px;color:#9CA3AF">Total fixos</div><div class="mono" style="font-size:14px;font-weight:600;color:#EF4444">−'+fmt(c.tf)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:#9CA3AF">Sobra variável</div><div class="mono" style="font-size:14px;font-weight:700;color:#10B981">'+fmt(c.bv||0)+'</div></div></div>';
+  if(m.income>0)html+='<div style="height:1px;background:#F3F4F6;margin:8px 0"></div><div style="display:flex;justify-content:space-between"><div><div style="font-size:10px;color:#9CA3AF">Total fixos</div><div class="mono" style="font-size:14px;font-weight:600;color:#EF4444">−'+fmt(c.tf)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:#9CA3AF">Saldo livre</div><div class="mono" style="font-size:14px;font-weight:700;color:'+(c.rem!=null&&c.rem<0?'#EF4444':'#10B981')+'">'+fmt(c.rem!=null?c.rem:c.bv||0)+'</div></div></div>';
   html+='</div><div class="card"><div class="card-title">Contas fixas</div>';
   m.fixed.forEach(function(e,i){
     var isC=e.name==='Santander'||e.name==='Inter';
@@ -780,7 +781,9 @@ function renderCartoes(){
   html+='<div style="font-size:11px;color:#9CA3AF;margin:2px 4px 10px">Livre cartão = Limite − Ocupado − Parcelas a vencer</div>';
   CARDS.forEach(function(c){
     var livre=cardLivre(c);
-    var pctUsed=c.limite>0?Math.min(100,(c.ocupado+cardParcelas(c))/c.limite*100):0;
+    var ocup=cardOcupado(c);
+    var parc=cardParcelas(c);
+    var pctUsed=c.limite>0?Math.min(100,ocup/c.limite*100):0;
     var col=pctUsed>85?'#EF4444':pctUsed>60?'#F59E0B':'#10B981';
     html+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">💳 '+c.name+'</div>';
     if(ST.eCard===c.key)html+='<button class="btn-x" onmousedown="event.preventDefault()" onclick="canCard()">✕</button>';
@@ -789,16 +792,17 @@ function renderCartoes(){
     if(ST.eCard===c.key){
       html+='<div style="display:flex;flex-direction:column;gap:8px">'
         +cardField('Limite total','cl-'+c.key,c.limite)
-        +cardField('Ocupado (fatura/uso atual)','co-'+c.key,c.ocupado)
-        +'<div style="font-size:10px;color:#9CA3AF">Parcelas a vencer ('+fmt(cardParcelas(c))+') são calculadas pelas compras parceladas.</div>'
+        +cardField('Ocupado base (fatura/avulso)','co-'+c.key,c.ocupado)
+        +'<div style="font-size:10px;color:#9CA3AF">Parcelas a vencer ('+fmt(parc)+') são somadas automaticamente ao Ocupado.</div>'
         +'<button class="btn-ok" style="align-self:flex-end;padding:6px 18px" onmousedown="event.preventDefault()" onclick="svCard(\''+c.key+'\')">Salvar</button></div>';
     }else{
       html+='<div class="mono" style="font-size:22px;font-weight:700;color:'+col+'">'+fmt(livre)+'<span style="font-size:11px;color:#9CA3AF;font-weight:400"> livre</span></div>';
       html+='<div class="prog-wrap" style="margin:8px 0"><div class="prog-bar" style="width:'+pctUsed+'%;background:'+col+'"></div></div>';
       html+='<div style="display:flex;justify-content:space-between;font-size:11px;color:#9CA3AF">'
         +'<span>Limite '+fmt(c.limite)+'</span>'
-        +'<span style="color:#EF4444">Ocupado '+fmt(c.ocupado)+'</span>'
-        +'<span style="color:#F59E0B">Parcelas '+fmt(cardParcelas(c))+'</span></div>';
+        +'<span style="color:#EF4444">Ocupado '+fmt(ocup)+'</span>'
+        +'</div>'
+        +'<div style="font-size:10px;color:#D1D5DB;margin-top:2px">base '+fmt(c.ocupado)+' · parcelas '+fmt(parc)+'</div>';
       var its=c.items||[];
       if(its.length){
         html+='<div style="margin-top:10px;border-top:.5px solid #F3F4F6;padding-top:6px"><div style="font-size:10px;color:#9CA3AF;margin-bottom:4px">Compras ('+its.length+')</div>';
