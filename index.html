@@ -571,26 +571,30 @@ async function send(){
         instReply+='\n💳 '+card.name+': +'+fmt(inst.total)+' em '+inst.n+'x. Livre: '+fmt(cardLivre(card));
       }
     }else if(card){
-      // à vista no CARTÃO: vai pro cartão (ocupado), não vira gasto variável do mês
+      // à vista no CARTÃO: entra nos gastos variáveis (req 3) E desconta o limite do cartão (req 4)
       card.items=card.items||[];
-      card.ocupado+=parsed.amount;
-      card.items.push({id:Date.now(),desc:label,per:parsed.amount,n:1,total:parsed.amount,kind:'vista',date:toDay()});
+      card.ocupado=Math.round((card.ocupado+parsed.amount)*100)/100;
+      var cId=Date.now();
+      card.items.push({id:cId,desc:label,per:parsed.amount,n:1,total:parsed.amount,kind:'vista',date:toDay()});
       syncCard(card);
-      instReply='💳 '+card.name+' · '+label+': '+fmt(parsed.amount)+' ocupado.\nLivre no cartão: '+fmt(cardLivre(card));
+      // gasto variável do mês atual + salva na planilha (req 12)
+      newE={id:cId+1,date:toDay(),label:label,category:parsed.category,amount:parsed.amount,ts:now};
+      cur().entries.push(newE);
+      appendRow(newE,cur().label);
+      cardMsg='\n💳 '+card.name+' · livre: '+fmt(cardLivre(card));
     }else{
-      var tmi=Math.min(ST.mi+1,ST.months.length-1);
-      newE=Object.assign({},parsed,{id:Date.now(),date:toDay(),ts:now,_tmi:tmi});
-      ST.months[tmi].entries.push(newE);appendRow(newE,ST.months[tmi].label);
+      // compra à vista sem cartão → gasto variável do mês atual (req 8)
+      newE=Object.assign({},parsed,{id:Date.now(),date:toDay(),ts:now});
+      cur().entries.push(newE);
+      appendRow(newE,cur().label);
     }
     if(ST.panel!=='chat')renderPanel();
   }
   var c=cmp(ST.mi),low=text.toLowerCase(),reply='';
   if(instReply){reply=instReply;}
   else if(newE){
-    var e=c.rem>=c.bv*.5?'✅':c.rem>=c.bv*.2?'⚠️':'🔴';
-    var tgtLbl=ST.months[newE._tmi||ST.mi].label;
-    var nextInfo=newE._tmi&&newE._tmi!==ST.mi?' → pago em '+tgtLbl:'';
-    reply=e+' Registrei '+fmt(newE.amount)+' em '+newE.label+nextInfo+'.\n\nSobra: '+fmt(c.rem)+' ('+Math.round(100-c.pct)+'%).\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.'+cardMsg;
+    var e=c.rem!=null&&c.bv>0?(c.rem>=c.bv*.5?'✅':c.rem>=c.bv*.2?'⚠️':'🔴'):'📝';
+    reply=e+' Registrei '+fmt(newE.amount)+' em '+newE.label+'.\n\nSobra: '+(c.rem!=null?fmt(c.rem):'—')+(c.bv>0?' ('+Math.round(100-c.pct)+'%)':'')+'.\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.'+cardMsg;
   }else if(low.match(/quanto (posso|tenho|sobrou|resta|falta)|saldo|resumo|status/)){
     var em=c.pct<60?'😊':c.pct<85?'😐':'😬';
     reply=em+' '+cur().label+':\n\nOrçamento: '+(c.bv!=null?fmt(c.bv):'sem salário')+'\nGasto: '+fmt(c.sp)+'\nLivre: '+(c.rem!=null?fmt(c.rem):'—')+'\nDá '+fmt(c.day)+'/dia com '+c.dl+' dias.';
@@ -753,7 +757,13 @@ function dlFixed(id){
 }
 
 function renderCartoes(){
-  var html='<div style="font-size:11px;color:#9CA3AF;margin:2px 4px 10px">Livre = Limite − Ocupado − Parcelas a vencer</div>';
+  var cm=cmp(ST.mi),mc=cur();
+  var html='';
+  // Resumo financeiro integrado (req 5): saldo mensal relacionado ao salário
+  if(mc.income>0){
+    html+='<div class="card" style="background:#111827;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:10px;color:#6B7280">saldo livre este mês</div><div class="mono" style="font-size:18px;font-weight:700;color:'+(cm.rem>=0?'#10B981':'#EF4444')+'">'+(cm.rem>=0?'':'-')+fmt(Math.abs(cm.rem||0))+'</div></div><div style="text-align:right"><div style="font-size:10px;color:#6B7280">salário</div><div class="mono" style="font-size:13px;color:#9CA3AF">'+fmt(mc.income)+'</div><div style="font-size:10px;color:#6B7280;margin-top:2px">− fixos '+fmt(cm.tf)+'</div></div></div></div>';
+  }
+  html+='<div style="font-size:11px;color:#9CA3AF;margin:2px 4px 10px">Livre cartão = Limite − Ocupado − Parcelas a vencer</div>';
   CARDS.forEach(function(c){
     var livre=cardLivre(c);
     var pctUsed=c.limite>0?Math.min(100,(c.ocupado+cardParcelas(c))/c.limite*100):0;
