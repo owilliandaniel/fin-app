@@ -67,7 +67,7 @@
     .row-item:last-child{border-bottom:none}
     #sync-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-left:6px;vertical-align:middle}
     #sync-dot.syncing{background:#F59E0B;animation:pulse 1s infinite}
-    #sync-dot.ok{background:#10B981}z
+    #sync-dot.ok{background:#10B981}
     #sync-dot.err{background:#EF4444}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
     #toast{position:absolute;bottom:90px;left:50%;transform:translateX(-50%);background:#111827;color:#F9FAFB;font-size:12px;padding:7px 16px;border-radius:20px;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;z-index:99}
@@ -84,6 +84,8 @@
     .btn-secondary{width:100%;padding:9px;border-radius:8px;border:.5px solid #D1D5DB;background:transparent;color:#555;font-size:13px;cursor:pointer;font-family:inherit;margin-top:8px}
     .badge{font-size:10px;padding:1px 6px;border-radius:4px;background:#FEF3E2;color:#F59E0B;margin-left:6px}
     .badge.done{background:#E8F4ED;color:#1A6635}
+    .badge.perm{background:#EFF6FF;color:#3B82F6}
+    .badge.parc{background:#FEF3E2;color:#F59E0B}
     .edit-row{display:flex;align-items:center;gap:4px}
     .edit-input{width:90px;font-size:13px;padding:3px 7px;border-radius:6px;border:1px solid #3B82F6;font-family:'Courier New',monospace;text-align:right;outline:none}
     .btn-ok{font-size:11px;padding:3px 8px;border-radius:6px;border:none;background:#111827;color:#FFF;cursor:pointer;touch-action:manipulation}
@@ -228,7 +230,7 @@ var CATS=[{name:'Mercado',color:'#10B981',keys:['mercado','feira','supermercado'
 function dCat(t){var l=t.toLowerCase();for(var c of CATS)if(c.keys.some(function(k){return l.includes(k)}))return c;return CATS[CATS.length-1];}
 function catCol(n){var c=CATS.find(function(x){return x.name===n});return c?c.color:'#6B7280';}
 
-var ST={mi:0,months:ML.map(function(lbl,i){return{label:lbl,income:0,fixed:BF[i].map(function(f){return Object.assign({},f)}),entries:[]};}),eFixed:null,eEntry:null,eInc:false,addFix:false,eCard:null,addCard:false,panel:'chat'};
+var ST={mi:0,months:ML.map(function(lbl,i){return{label:lbl,income:0,fixed:BF[i].map(function(f){return Object.assign({},f)}),entries:[]};}),eFixed:null,eEntry:null,eInc:false,addFix:false,eCard:null,addCard:false,eCardItem:null,panel:'chat'};
 function cur(){return ST.months[ST.mi];}
 
 // === Cartões: limite revolvente (global, não por mês) ===
@@ -452,6 +454,18 @@ function pInst(text){
   if(total<=0||total>999999)return null;
   return{n:n,total:total,per:per};
 }
+// Parcelas com valores diferentes: "1x 100 + 2x 150" → [100, 150, 150]
+function pInstMulti(text){
+  if(!text.includes('+'))return null;
+  var re=/(\d+)\s*x\s*(\d+(?:[.,]\d+)?)/gi,segs=[],m;
+  while((m=re.exec(text))!==null)segs.push({count:parseInt(m[1]),amount:pAmt(m[2])});
+  if(segs.length<2)return null;
+  var schedule=[];
+  segs.forEach(function(s){for(var i=0;i<s.count;i++)schedule.push(s.amount);});
+  if(schedule.length<2)return null;
+  var total=Math.round(schedule.reduce(function(s,a){return s+a;},0)*100)/100;
+  return{schedule:schedule,n:schedule.length,total:total,per:schedule[0]};
+}
 function pMsg(text){
   var c=text.trim().toLowerCase(),m=c.match(/\d+(?:[.,]\d+)?(?:[.,]\d+)?/);
   if(!m)return null;
@@ -526,7 +540,7 @@ async function send(){
   var parsed=pMsg(text),newE=null,cardMsg='',instReply='';
   if(parsed){
     var card=findCard(text);
-    var inst=pInst(text);
+    var inst=pInstMulti(text)||pInst(text);
     var now=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     var clean=text.replace(/(\d+)\s*x\b/i,' ').replace(/(\d+)\s*(?:vezes|parcelas)\b/i,' ');
     var lb=pMsg(clean);
@@ -534,22 +548,25 @@ async function send(){
     if(inst){
       // PARCELADO (cartão ou não): SEMPRE entra nos Gastos fixos, uma parcela por mês, avisando quantas faltam
       var per=inst.per;
-      var first=Math.round((inst.total-per*(inst.n-1))*100)/100;
+      var first=inst.schedule?inst.schedule[0]:Math.round((inst.total-per*(inst.n-1))*100)/100;
       var made=0,sid=Date.now();
       for(var k=0;k<inst.n;k++){
         var tmi=ST.mi+k;if(tmi>=ST.months.length)break;
         var rem=inst.n-1-k; // quantas faltam DEPOIS desta
         var nt=(k+1)+'/'+inst.n+(card?' · '+card.name:'')+(rem>0?' · faltam '+rem:' · última ✓');
         var maxId=ST.months[tmi].fixed.reduce(function(s,e){return Math.max(s,Number(e.id)||0);},0);
-        ST.months[tmi].fixed.push({id:maxId+1,name:label,amount:k===0?first:per,note:nt,parcela:true,serie:sid});
+        var amt=inst.schedule?inst.schedule[k]:(k===0?first:per);
+        ST.months[tmi].fixed.push({id:maxId+1,name:label,amount:amt,note:nt,parcela:true,serie:sid});
+        syncFixed(ST.months[tmi].label,ST.months[tmi].fixed);
         made++;
       }
       saveLocal();
-      instReply='📋 '+label+' parcelado em '+inst.n+'x de '+fmt(per)+' (total '+fmt(inst.total)+') nos Gastos fixos.\n'+made+' parcela(s) a partir de '+cur().label+'.';
+      var instDesc=inst.schedule?inst.n+'x (valores variados, total '+fmt(inst.total)+')':inst.n+'x de '+fmt(per)+' (total '+fmt(inst.total)+')';
+      instReply='📋 '+label+' parcelado em '+instDesc+' nos Gastos fixos.\n'+made+' parcela(s) a partir de '+cur().label+'.';
       // se foi num cartão, também registra na lista do cartão (parcelas diminuem sozinhas com o tempo)
       if(card){
         card.items=card.items||[];
-        card.items.push({id:Date.now(),desc:label,per:inst.per,n:inst.n,total:inst.total,kind:'parc',startMi:ST.mi,date:toDay()});
+        card.items.push({id:Date.now(),desc:label,per:inst.per,n:inst.n,total:inst.total,kind:'parc',startMi:ST.mi,date:toDay(),schedule:inst.schedule||null});
         syncCard(card);
         instReply+='\n💳 '+card.name+': +'+fmt(inst.total)+' em '+inst.n+'x. Livre: '+fmt(cardLivre(card));
       }
@@ -596,7 +613,7 @@ async function send(){
     reply='🧹 Apaguei '+nDel+' parcela(s) de todos os meses. Pode lançar de novo.';
   }
   else if(low.match(/(apagar|limpar|resetar|zerar).*(tudo|todos|geral)/)){wipeAll();reply='';}
-  else if(low.match(/ajuda|help/)){reply='💬 "gastei 50 no mercado"\n"300 em 3x no mercado" (total ÷ 3)\n"3x 100 no mercado" (3 de 100)\n"gastei 80 no cartão santander"\n"apagar parcelas" / "apagar tudo"';}
+  else if(low.match(/ajuda|help/)){reply='💬 Gastos variáveis:\n"gastei 50 no mercado"\n\nParcelas uniformes:\n"300 em 3x" ou "3x 100"\n\nParcelas com valores diferentes:\n"shopee 1x 100 + 2x 150"\n\nCartão à vista:\n"gastei 80 no santander"\n\nCartão parcelado:\n"3x 100 no santander"\n\nGastos fixos:\nUse a aba Fixos ✏️\n\n"apagar parcelas" / "apagar tudo"';}
   else{reply='Não entendi 🤔 Tente: "gastei 80 de delivery"\nOu: "quanto posso gastar?"';}
   if(reply)addMsg('bot',reply);updHdr();
 }
@@ -677,7 +694,7 @@ function renderFixos(){
   m.fixed.forEach(function(e,i){
     var isC=e.name==='Santander'||e.name==='Inter';
     var cItems=e.name==='Santander'?SI:e.name==='Inter'?II:[];
-    html+='<div style="border-bottom:'+(i<m.fixed.length-1?'.5px solid #F3F4F6':'none')+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><div><span style="font-size:13px;color:#374151;font-weight:'+(isC?600:400)+'">'+e.name+'</span>'+(e.note?'<span class="badge'+(e.note.includes('✓')?' done':'')+'">'+e.note+'</span>':'')+' </div>';
+    html+='<div style="border-bottom:'+(i<m.fixed.length-1?'.5px solid #F3F4F6':'none')+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><div><span style="font-size:13px;color:#374151;font-weight:'+(isC?600:400)+'">'+e.name+'</span>'+(e.permanent?'<span class="badge perm">♾️ permanente</span>':e.note?'<span class="badge'+(e.note.includes('✓')?' done':e.parcela?' parc':'')+'">'+e.note+'</span>':'')+' </div>';
     if(ST.eFixed===e.id)html+='<div class="edit-row" style="gap:6px"><input class="edit-input" id="fn-'+e.id+'" type="text" value="'+e.name+'" style="flex:1.4" onkeydown="fKey(event,'+e.id+')"><input class="edit-input" id="fi-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="fKey(event,'+e.id+')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svFixed('+e.id+')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canFixed()">✕</button></div>';
     else html+='<div style="display:flex;align-items:center;gap:8px"><span class="mono" style="font-size:13px;color:#6B7280">'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edFixed('+e.id+')">✏️</button><button class="btn-del" onclick="dlFixed('+e.id+')">✕</button></div>';
     html+='</div>';
@@ -685,7 +702,7 @@ function renderFixos(){
     html+='</div>';
   });
   html+='<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:1px solid #E5E7EB"><span style="font-size:13px;font-weight:600">Total fixos</span><span class="mono" style="font-size:13px;font-weight:700;color:#EF4444">'+fmt(c.tf)+'</span></div>';
-  if(ST.addFix)html+='<div class="edit-row" style="margin-top:10px;gap:6px"><input class="edit-input" id="nf-name" type="text" placeholder="Nome" style="flex:1.4" onkeydown="nfKey(event)"><input class="edit-input" id="nf-amt" type="text" inputmode="decimal" placeholder="0,00" onkeydown="nfKey(event)"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svAddFix()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canAddFix()">✕</button></div>';
+  if(ST.addFix)html+='<div style="margin-top:10px"><div class="edit-row" style="gap:6px"><input class="edit-input" id="nf-name" type="text" placeholder="Nome" style="flex:1.4" onkeydown="nfKey(event)"><input class="edit-input" id="nf-amt" type="text" inputmode="decimal" placeholder="0,00" onkeydown="nfKey(event)"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svAddFix()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canAddFix()">✕</button></div><label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#6B7280;margin-top:6px;cursor:pointer"><input type="checkbox" id="nf-perm" style="width:14px;height:14px;cursor:pointer"> Sem previsão de término (aluguel, carro, internet...)</label></div>';
   else html+='<button style="width:100%;margin-top:10px;font-size:12px;padding:8px;border-radius:8px;border:1px dashed #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="showAddFix()">+ Adicionar conta fixa</button>';
   html+='</div>';
   html+='<div style="font-size:11px;color:#D1D5DB;text-align:center;margin-top:8px">✏️ editar · Enter salvar · Esc cancelar</div>';
@@ -701,17 +718,18 @@ function svAddFix(){
   var nm=(document.getElementById('nf-name').value||'').trim();
   var n=pAmt(document.getElementById('nf-amt').value);
   if(!nm||n<=0){showToast('Informe nome e valor');return;}
+  var isPerm=!!(document.getElementById('nf-perm')&&document.getElementById('nf-perm').checked);
   var added=0;
   ST.months.forEach(function(m,mi){
     if(mi>=ST.mi&&!m.fixed.some(function(x){return x.name.toLowerCase()===nm.toLowerCase();})){
       var maxId=m.fixed.reduce(function(s,e){return Math.max(s,Number(e.id)||0);},0);
-      m.fixed.push({id:maxId+1,name:nm,amount:n,note:''});
+      m.fixed.push({id:maxId+1,name:nm,amount:n,note:'',permanent:isPerm||undefined});
       syncFixed(m.label,m.fixed);
       added++;
     }
   });
   ST.addFix=false;saveLocal();
-  if(added>1)showToast('Lançado em '+added+' meses ✓');
+  if(added>1)showToast('Lançado em '+added+' meses'+(isPerm?' · permanente ♾️':'')+' ✓');
   requestAnimationFrame(function(){updHdr();renderFixos();});
 }
 function dlFixed(id){
@@ -764,7 +782,12 @@ function renderCartoes(){
           var val=it.n>1?(fmt(it.per)+' × '+it.n+' = '+fmt(it.total)):fmt(it.total);
           var rem=it.kind==='parc'?itemRemaining(it):0;
           var tag=it.n>1?' <span style="color:#F59E0B;font-size:10px">'+it.n+'x'+(rem>0?' · faltam '+rem:' · quitado ✓')+'</span>':'';
-          html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:.5px dashed #F3F4F6"><span style="font-size:12px;color:#374151">'+it.desc+tag+'</span><span style="display:flex;align-items:center;gap:8px"><span class="mono" style="font-size:11px;color:#9CA3AF">'+val+'</span><button class="btn-del" onclick="dlCardItem(\''+c.key+'\',\''+it.id+'\')">✕</button></span></div>';
+          var isEdit=ST.eCardItem&&ST.eCardItem.key===c.key&&String(ST.eCardItem.id)===String(it.id);
+          if(isEdit){
+            html+='<div style="padding:6px 0;border-bottom:.5px dashed #F3F4F6"><div class="edit-row" style="gap:4px"><input class="edit-input" id="ci-desc-'+it.id+'" type="text" value="'+it.desc+'" style="flex:1.4" onkeydown="ciKey(event,\''+c.key+'\',\''+it.id+'\')"><input class="edit-input" id="ci-amt-'+it.id+'" type="text" inputmode="decimal" value="'+it.per+'" onkeydown="ciKey(event,\''+c.key+'\',\''+it.id+'\')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svCardItem(\''+c.key+'\',\''+it.id+'\')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canCardItem()">✕</button></div></div>';
+          }else{
+            html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:.5px dashed #F3F4F6"><span style="font-size:12px;color:#374151">'+it.desc+tag+'</span><span style="display:flex;align-items:center;gap:6px"><span class="mono" style="font-size:11px;color:#9CA3AF">'+val+'</span><button class="btn-edit" onclick="edCardItem(\''+c.key+'\',\''+it.id+'\')">✏️</button><button class="btn-del" onclick="dlCardItem(\''+c.key+'\',\''+it.id+'\')">✕</button></span></div>';
+          }
         });
         html+='</div>';
       }
@@ -776,6 +799,7 @@ function renderCartoes(){
   document.getElementById('cartoes-content').innerHTML=html;
   if(ST.eCard){var i=document.getElementById('cl-'+ST.eCard);if(i){i.focus();i.select();}}
   if(ST.addCard){var nc=document.getElementById('nc-name');if(nc)nc.focus();}
+  if(ST.eCardItem){var ci=document.getElementById('ci-desc-'+ST.eCardItem.id);if(ci){ci.focus();ci.select();}}
 }
 function showAddCard(){ST.addCard=true;ST.eCard=null;renderCartoes();}
 function canAddCard(){ST.addCard=false;renderCartoes();}
@@ -815,6 +839,27 @@ function dlCardItem(key,id){
   c.items=c.items.filter(function(x){return String(x.id)!==String(id);});
   syncCard(c);renderCartoes();
 }
+function edCardItem(key,id){ST.eCardItem={key:key,id:id};renderCartoes();}
+function canCardItem(){ST.eCardItem=null;renderCartoes();}
+function ciKey(e,key,id){if(e.key==='Enter')svCardItem(key,id);if(e.key==='Escape')canCardItem();}
+function svCardItem(key,id){
+  var c=CARDS.find(function(x){return x.key===key;});if(!c)return;
+  var descEl=document.getElementById('ci-desc-'+id);
+  var amtEl=document.getElementById('ci-amt-'+id);
+  if(!descEl||!amtEl)return;
+  var newDesc=descEl.value.trim();
+  var newAmt=pAmt(amtEl.value);
+  if(!newDesc||newAmt<=0){showToast('Informe descrição e valor');return;}
+  c.items=c.items.map(function(it){
+    if(String(it.id)===String(id)){
+      var newTotal=it.kind==='parc'?Math.round(newAmt*it.n*100)/100:newAmt;
+      if(it.kind!=='parc')c.ocupado=Math.max(0,Math.round((c.ocupado-it.total+newTotal)*100)/100);
+      return Object.assign({},it,{desc:newDesc,per:newAmt,total:newTotal});
+    }
+    return it;
+  });
+  ST.eCardItem=null;syncCard(c);renderCartoes();showToast('Compra atualizada ✓');
+}
 function edFixed(id){ST.eFixed=id;renderFixos();}
 function canFixed(){ST.eFixed=null;renderFixos();}
 function fKey(e,id){if(e.key==='Enter')svFixed(id);if(e.key==='Escape')canFixed();}
@@ -824,6 +869,8 @@ function svFixed(id){
   var n=pAmt(ai.value);var nm=ni?ni.value.trim():'';
   var serie=null,origName='';
   cur().fixed.forEach(function(x){if(String(x.id)===String(id)){serie=x.serie;origName=x.name;}});
+  var isPerm=false;
+  cur().fixed.forEach(function(x){if(String(x.id)===String(id))isPerm=!!x.permanent;});
   cur().fixed=cur().fixed.map(function(x){return String(x.id)===String(id)?Object.assign({},x,{amount:n>0?n:x.amount,name:nm||x.name}):x;});
   if(serie!=null){
     // parcelas: propaga nome a todos os meses da série
@@ -832,10 +879,10 @@ function svFixed(id){
       syncFixed(m.label,m.fixed);
     });
   }else if(origName){
-    // fixo regular: propaga nome+valor para meses futuros com mesmo nome
+    // fixo regular (ou permanente): propaga nome+valor para meses futuros com mesmo nome
     ST.months.forEach(function(m,mi){
       if(mi>ST.mi){
-        m.fixed=m.fixed.map(function(x){return x.name===origName?Object.assign({},x,{name:nm||x.name,amount:n>0?n:x.amount}):x;});
+        m.fixed=m.fixed.map(function(x){return x.name===origName?Object.assign({},x,{name:nm||x.name,amount:n>0?n:x.amount,permanent:isPerm||undefined}):x;});
         syncFixed(m.label,m.fixed);
       }
     });
