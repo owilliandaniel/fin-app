@@ -562,29 +562,31 @@ async function send(){
     var lb=pMsg(clean);
     var label=(lb&&lb.label)?lb.label:dCat(text.toLowerCase()).name;
     if(inst){
-      // PARCELADO (cartão ou não): SEMPRE entra nos Gastos fixos, uma parcela por mês, avisando quantas faltam
       var per=inst.per;
-      var first=inst.schedule?inst.schedule[0]:Math.round((inst.total-per*(inst.n-1))*100)/100;
-      var made=0,sid=Date.now();
-      for(var k=0;k<inst.n;k++){
-        var tmi=ST.mi+k;if(tmi>=ST.months.length)break;
-        var rem=inst.n-1-k; // quantas faltam DEPOIS desta
-        var nt=(k+1)+'/'+inst.n+(card?' · '+card.name:'')+(rem>0?' · faltam '+rem:' · última ✓');
-        var maxId=ST.months[tmi].fixed.reduce(function(s,e){return Math.max(s,Number(e.id)||0);},0);
-        var amt=inst.schedule?inst.schedule[k]:(k===0?first:per);
-        ST.months[tmi].fixed.push({id:maxId+1,name:label,amount:amt,note:nt,parcela:true,serie:sid});
-        syncFixed(ST.months[tmi].label,ST.months[tmi].fixed);
-        made++;
-      }
-      saveLocal();
       var instDesc=inst.schedule?inst.n+'x (valores variados, total '+fmt(inst.total)+')':inst.n+'x de '+fmt(per)+' (total '+fmt(inst.total)+')';
-      instReply='📋 '+label+' parcelado em '+instDesc+' nos Gastos fixos.\n'+made+' parcela(s) a partir de '+cur().label+'.';
-      // se foi num cartão, também registra na lista do cartão (parcelas diminuem sozinhas com o tempo)
       if(card){
+        // PARCELADO NO CARTÃO: vai apenas para card.items — a fatura do cartão já cobre esses valores
+        // NÃO entra em m.fixed para evitar dupla contagem com a linha da fatura
         card.items=card.items||[];
         card.items.push({id:Date.now(),desc:label,per:inst.per,n:inst.n,total:inst.total,kind:'parc',startMi:ST.mi,date:toDay(),schedule:inst.schedule||null});
         syncCard(card);
-        instReply+='\n💳 '+card.name+': +'+fmt(inst.total)+' em '+inst.n+'x. Livre: '+fmt(cardLivre(card));
+        instReply='💳 '+card.name+' · '+label+' parcelado em '+instDesc+'.\nLivre: '+fmt(cardLivre(card));
+      }else{
+        // PARCELADO SEM CARTÃO: entra nos Gastos fixos, uma parcela por mês
+        var first=inst.schedule?inst.schedule[0]:Math.round((inst.total-per*(inst.n-1))*100)/100;
+        var made=0,sid=Date.now();
+        for(var k=0;k<inst.n;k++){
+          var tmi=ST.mi+k;if(tmi>=ST.months.length)break;
+          var rem=inst.n-1-k;
+          var nt=(k+1)+'/'+inst.n+(rem>0?' · faltam '+rem:' · última ✓');
+          var maxId=ST.months[tmi].fixed.reduce(function(s,e){return Math.max(s,Number(e.id)||0);},0);
+          var amt=inst.schedule?inst.schedule[k]:(k===0?first:per);
+          ST.months[tmi].fixed.push({id:maxId+1,name:label,amount:amt,note:nt,parcela:true,serie:sid});
+          syncFixed(ST.months[tmi].label,ST.months[tmi].fixed);
+          made++;
+        }
+        saveLocal();
+        instReply='📋 '+label+' parcelado em '+instDesc+' nos Gastos fixos.\n'+made+' parcela(s) a partir de '+cur().label+'.';
       }
     }else if(card){
       // à vista no CARTÃO: entra nos gastos variáveis do mês atual + desconta limite do cartão (req 3,4)
@@ -711,13 +713,13 @@ function renderFixos(){
   if(m.income>0)html+='<div style="height:1px;background:#F3F4F6;margin:8px 0"></div><div style="display:flex;justify-content:space-between"><div><div style="font-size:10px;color:#9CA3AF">Total fixos</div><div class="mono" style="font-size:14px;font-weight:600;color:#EF4444">−'+fmt(c.tf)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:#9CA3AF">Saldo livre</div><div class="mono" style="font-size:14px;font-weight:700;color:'+(c.rem!=null&&c.rem<0?'#EF4444':'#10B981')+'">'+fmt(c.rem!=null?c.rem:c.bv||0)+'</div></div></div>';
   html+='</div><div class="card"><div class="card-title">Contas fixas</div>';
   m.fixed.forEach(function(e,i){
-    var isC=e.name==='Santander'||e.name==='Inter';
-    var cItems=e.name==='Santander'?SI:e.name==='Inter'?II:[];
-    html+='<div style="border-bottom:'+(i<m.fixed.length-1?'.5px solid #F3F4F6':'none')+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><div><span style="font-size:13px;color:#374151;font-weight:'+(isC?600:400)+'">'+e.name+'</span>'+(e.permanent?'<span class="badge perm">♾️ permanente</span>':e.note?'<span class="badge'+(e.note.includes('✓')?' done':e.parcela?' parc':'')+'">'+e.note+'</span>':'')+' </div>';
+    var cardRef=CARDS.find(function(c){return c.name===e.name;});
+    var cItems=cardRef?(cardRef.items||[]).filter(function(it){return it.kind==='parc'&&itemRemaining(it)>0;}):[];
+    html+='<div style="border-bottom:'+(i<m.fixed.length-1?'.5px solid #F3F4F6':'none')+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><div><span style="font-size:13px;color:#374151;font-weight:'+(cardRef?600:400)+'">'+e.name+'</span>'+(e.permanent?'<span class="badge perm">♾️ permanente</span>':e.note?'<span class="badge'+(e.note.includes('✓')?' done':e.parcela?' parc':'')+'">'+e.note+'</span>':'')+' </div>';
     if(ST.eFixed===e.id)html+='<div class="edit-row" style="gap:6px"><input class="edit-input" id="fn-'+e.id+'" type="text" value="'+e.name+'" style="flex:1.4" onkeydown="fKey(event,'+e.id+')"><input class="edit-input" id="fi-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="fKey(event,'+e.id+')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svFixed('+e.id+')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canFixed()">✕</button></div>';
     else html+='<div style="display:flex;align-items:center;gap:8px"><span class="mono" style="font-size:13px;color:#6B7280">'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edFixed('+e.id+')">✏️</button><button class="btn-del" onclick="dlFixed('+e.id+')">✕</button></div>';
     html+='</div>';
-    if(isC)cItems.forEach(function(ci,j){html+='<div style="display:flex;justify-content:space-between;padding:3px 0 3px 14px;border-bottom:'+(j<cItems.length-1?'.5px dashed #F3F4F6':'none')+'"><span style="font-size:11px;color:#9CA3AF">'+ci.desc+'</span><span class="mono" style="font-size:11px;color:#9CA3AF">'+fmt(ci.amount)+'</span></div>';});
+    if(cItems.length)cItems.forEach(function(ci,j){var rem=itemRemaining(ci);html+='<div style="display:flex;justify-content:space-between;padding:3px 0 3px 14px;border-bottom:'+(j<cItems.length-1?'.5px dashed #F3F4F6':'none')+'"><span style="font-size:11px;color:#9CA3AF">'+ci.desc+' (faltam '+rem+'x)</span><span class="mono" style="font-size:11px;color:#9CA3AF">'+fmt(ci.per)+'/mês</span></div>';});
     html+='</div>';
   });
   html+='<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:1px solid #E5E7EB"><span style="font-size:13px;font-weight:600">Total fixos</span><span class="mono" style="font-size:13px;font-weight:700;color:#EF4444">'+fmt(c.tf)+'</span></div>';
