@@ -642,7 +642,7 @@ function renderResumo(){
   document.getElementById('resumo-content').innerHTML=html;
 }
 
-// === GASTOS: salário + fixos + variáveis (tudo junto) ===
+// === GASTOS: salário + extrato unificado ===
 function renderGastos(){
   var c=cmp(ST.mi),m=cur();
   var html='';
@@ -657,39 +657,34 @@ function renderGastos(){
     var saldo=m.income-totalGasto;
     html+='<div style="height:1px;background:#F3F4F6;margin:8px 0"></div>';
     html+='<div style="display:flex;justify-content:space-between;gap:4px">';
-    html+='<div><div style="font-size:10px;color:#9CA3AF">Fixos</div><div class="mono" style="font-size:13px;font-weight:600;color:#EF4444">−'+fmt(c.tf)+'</div></div>';
-    html+='<div><div style="font-size:10px;color:#9CA3AF">Variáveis</div><div class="mono" style="font-size:13px;font-weight:600;color:#EF4444">−'+fmt(c.sp)+'</div></div>';
     html+='<div><div style="font-size:10px;color:#9CA3AF">Total gasto</div><div class="mono" style="font-size:13px;font-weight:600;color:#EF4444">−'+fmt(totalGasto)+'</div></div>';
     html+='<div style="text-align:right"><div style="font-size:10px;color:#9CA3AF">Saldo</div><div class="mono" style="font-size:13px;font-weight:700;color:'+(saldo<0?'#EF4444':'#10B981')+'">'+fmt(saldo)+'</div></div>';
     html+='</div>';
   }
   html+='</div>';
-  // Contas Fixas
-  html+='<div class="card"><div class="card-title">Contas Fixas</div>';
-  if(!m.fixed.length)html+='<div style="text-align:center;padding:12px 0;color:#D1D5DB;font-size:13px">Nenhuma conta fixa.</div>';
+  // Gastos — extrato unificado
+  var totalItems=m.fixed.length+m.entries.length;
+  html+='<div class="card"><div class="card-title">Gastos ('+totalItems+')</div>';
+  if(!m.fixed.length&&!m.entries.length)html+='<div style="text-align:center;padding:16px 0;color:#D1D5DB;font-size:13px">Nenhum lançamento. Use o chat 💬</div>';
   m.fixed.forEach(function(e,i){
-    html+='<div style="border-bottom:'+(i<m.fixed.length-1?'.5px solid #F3F4F6':'none')+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><div><span style="font-size:13px;color:#374151">'+e.name+'</span>'+(e.permanent?'<span class="badge perm">♾️</span>':e.note?'<span class="badge'+(e.note.includes('✓')?' done':e.parcela?' parc':'')+'">'+e.note+'</span>':'')+' </div>';
+    var isLast=i===m.fixed.length-1&&!m.entries.length;
+    html+='<div style="border-bottom:'+(!isLast?'.5px solid #F3F4F6':'none')+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><div><span style="font-size:13px;color:#374151">'+e.name+'</span>'+(e.permanent?'<span class="badge perm">♾️</span>':e.note?'<span class="badge'+(e.note.includes('✓')?' done':e.parcela?' parc':'')+'">'+e.note+'</span>':'')+' </div>';
     if(ST.eFixed===e.id)html+='<div class="edit-row" style="gap:6px"><input class="edit-input" id="fn-'+e.id+'" type="text" value="'+e.name+'" style="flex:1.4" onkeydown="fKey(event,'+e.id+')"><input class="edit-input" id="fi-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="fKey(event,'+e.id+')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svFixed('+e.id+')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canFixed()">✕</button></div>';
     else html+='<div style="display:flex;align-items:center;gap:8px"><span class="mono" style="font-size:13px;color:#6B7280">'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edFixed('+e.id+')">✏️</button><button class="btn-del" onclick="dlFixed('+e.id+')">✕</button></div>';
     html+='</div></div>';
   });
-  html+='<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:1px solid #E5E7EB"><span style="font-size:13px;font-weight:600">Total fixos</span><span class="mono" style="font-size:13px;font-weight:700;color:#EF4444">'+fmt(c.tf)+'</span></div>';
-  if(ST.addFix)html+='<div style="margin-top:10px"><div class="edit-row" style="gap:6px"><input class="edit-input" id="nf-name" type="text" placeholder="Nome" style="flex:1.4" onkeydown="nfKey(event)"><input class="edit-input" id="nf-amt" type="text" inputmode="decimal" placeholder="0,00" onkeydown="nfKey(event)"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svAddFix()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canAddFix()">✕</button></div><label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#6B7280;margin-top:6px;cursor:pointer"><input type="checkbox" id="nf-perm" style="width:14px;height:14px;cursor:pointer"> Sem previsão de término (aluguel, carro, internet...)</label></div>';
-  else html+='<button style="width:100%;margin-top:10px;font-size:12px;padding:8px;border-radius:8px;border:1px dashed #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="showAddFix()">+ Adicionar conta fixa</button>';
-  html+='</div>';
-  // Gastos Variáveis
-  var entries=m.entries;
-  html+='<div class="card"><div class="card-title">Gastos Variáveis ('+entries.length+')</div>';
-  if(!entries.length)html+='<div style="text-align:center;padding:16px 0;color:#D1D5DB;font-size:13px">Nenhum gasto ainda. Use o chat 💬</div>';
-  else{
-    entries.forEach(function(e){
-      html+='<div class="row-item"><div style="display:flex;align-items:center;gap:8px"><div style="width:8px;height:8px;border-radius:50%;background:'+e.category.color+';flex-shrink:0"></div><div><div style="font-size:13px;color:#111827">'+e.label+'</div><div style="font-size:10px;color:#9CA3AF">'+e.category.name+' · '+niceTs(e)+'</div></div></div>';
-      if(String(ST.eEntry)===String(e.id))html+='<div class="edit-row"><input class="edit-input" id="ei-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="eEKey(event,\''+e.id+'\')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svEntry(\''+e.id+'\')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canEntry()">✕</button></div>';
-      else html+='<div style="display:flex;align-items:center;gap:6px"><span class="mono" style="font-size:13px;font-weight:500;color:#EF4444">−'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edEntry(\''+e.id+'\')">✏️</button><button class="btn-del" onclick="dlEntry(\''+e.id+'\')">✕</button></div>';
-      html+='</div>';
-    });
-    html+='<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:1px solid #E5E7EB"><span style="font-size:13px;font-weight:600">Total variáveis</span><span class="mono" style="font-size:13px;font-weight:700;color:#EF4444">'+fmt(c.sp)+'</span></div>';
+  m.entries.forEach(function(e,i){
+    var isLast=i===m.entries.length-1;
+    html+='<div style="border-bottom:'+(!isLast?'.5px solid #F3F4F6':'none')+'"><div class="row-item" style="border:none"><div style="display:flex;align-items:center;gap:8px"><div style="width:8px;height:8px;border-radius:50%;background:'+e.category.color+';flex-shrink:0"></div><div><div style="font-size:13px;color:#111827">'+e.label+'</div><div style="font-size:10px;color:#9CA3AF">'+e.category.name+' · '+niceTs(e)+'</div></div></div>';
+    if(String(ST.eEntry)===String(e.id))html+='<div class="edit-row"><input class="edit-input" id="ei-'+e.id+'" type="text" inputmode="decimal" value="'+e.amount+'" onkeydown="eEKey(event,\''+e.id+'\')"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svEntry(\''+e.id+'\')">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canEntry()">✕</button></div>';
+    else html+='<div style="display:flex;align-items:center;gap:6px"><span class="mono" style="font-size:13px;font-weight:500;color:#EF4444">−'+fmt(e.amount)+'</span><button class="btn-edit" onclick="edEntry(\''+e.id+'\')">✏️</button><button class="btn-del" onclick="dlEntry(\''+e.id+'\')">✕</button></div>';
+    html+='</div></div>';
+  });
+  if(m.fixed.length||m.entries.length){
+    html+='<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:1px solid #E5E7EB"><span style="font-size:13px;font-weight:600">Total</span><span class="mono" style="font-size:13px;font-weight:700;color:#EF4444">'+fmt(c.tf+c.sp)+'</span></div>';
   }
+  if(ST.addFix)html+='<div style="margin-top:10px"><div class="edit-row" style="gap:6px"><input class="edit-input" id="nf-name" type="text" placeholder="Nome" style="flex:1.4" onkeydown="nfKey(event)"><input class="edit-input" id="nf-amt" type="text" inputmode="decimal" placeholder="0,00" onkeydown="nfKey(event)"><button class="btn-ok" onmousedown="event.preventDefault()" onclick="svAddFix()">OK</button><button class="btn-x" onmousedown="event.preventDefault()" onclick="canAddFix()">✕</button></div><label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#6B7280;margin-top:6px;cursor:pointer"><input type="checkbox" id="nf-perm" style="width:14px;height:14px;cursor:pointer"> Sem previsão de término (aluguel, carro, internet...)</label></div>';
+  else html+='<button style="width:100%;margin-top:10px;font-size:12px;padding:8px;border-radius:8px;border:1px dashed #D1D5DB;background:transparent;color:#6B7280;cursor:pointer" onclick="showAddFix()">+ Adicionar lançamento fixo</button>';
   html+='</div>';
   html+='<div style="font-size:11px;color:#D1D5DB;text-align:center;margin-top:8px">✏️ editar · Enter salvar · Esc cancelar</div>';
   document.getElementById('gastos-content').innerHTML=html;
