@@ -436,6 +436,21 @@ async function loadRemote(){
 function fmt(v){return'R$\u00a0'+Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function fmtK(v){if(Math.abs(v)>=1000){var k=Math.abs(v)/1000;var dec=k<2?2:1;return'R$\u00a0'+k.toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec})+'k';}return fmt(v);}
 function dLeft(){var t=new Date();return new Date(t.getFullYear(),t.getMonth()+1,0).getDate()-t.getDate();}
+// dias restantes para um determinado índice de mês (mi):
+// - mês atual real: dias restantes do mês (como dLeft)
+// - mês futuro: total de dias do mês (ainda não começou)
+// - mês passado: 0
+function dLeftMi(mi){
+  var t=new Date();
+  var lbl=ML[mi].split('/');
+  var mo=MN3.indexOf(lbl[0]); // 0-based
+  var yr=parseInt(lbl[1]);
+  var curYr=t.getFullYear(),curMo=t.getMonth();
+  var daysInMonth=new Date(yr,mo+1,0).getDate();
+  if(yr===curYr&&mo===curMo)return Math.max(1,daysInMonth-t.getDate());
+  if(yr>curYr||(yr===curYr&&mo>curMo))return daysInMonth; // mês futuro: mês cheio
+  return 1; // mês passado: evita divisão por zero
+}
 function pAmt(s){return parseFloat(String(s).replace(/\./g,'').replace(',','.'))||0;}
 function toDay(){return new Date().toLocaleDateString('pt-BR');}
 // detecta parcelamento e decide se o valor é TOTAL ou POR parcela pela ordem no texto
@@ -483,7 +498,7 @@ function cmp(mi){
   var rem=bv!=null?bv-sp:null;
   var pct=bv&&bv>0?Math.min(100,sp/bv*100):0;
   var col=pct>85?'#EF4444':pct>60?'#F59E0B':'#10B981';
-  var dl=dLeft();
+  var dl=dLeftMi(mi); // dias restantes corretos para o mês visualizado
   var day=rem&&rem>0?rem/Math.max(1,dl):0;
   return{tf:tf,bv:bv,sp:sp,rem:rem,pct:pct,col:col,dl:dl,day:day};
 }
