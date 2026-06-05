@@ -246,7 +246,7 @@ function saveCards(){localStorage.setItem('fin_cards',JSON.stringify(CARDS));}
 var MN3=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 function mlBase(){var p=ML[0].split('/');return parseInt(p[1])*12+MN3.indexOf(p[0]);}
 function curMiNow(){var t=new Date();return t.getFullYear()*12+t.getMonth()-mlBase();}
-function itemRemaining(it){var n=it.n||1;var sm=it.startMi!=null?it.startMi:0;var paid=Math.max(0,curMiNow()-sm);return Math.max(0,Math.min(n,n-paid));}
+function itemRemaining(it){var n=it.n||1;var sm=it.startMi!=null?it.startMi:0;var paid=Math.max(0,curMiNow()-sm+1);return Math.max(0,Math.min(n,n-paid));}
 function cardParcelas(c){return(c.items||[]).reduce(function(s,it){return it.kind==='parc'?s+itemRemaining(it)*it.per:s;},0);}
 function cardOcupado(c){return Math.round((c.ocupado+cardParcelas(c))*100)/100;}
 function cardLivre(c){return c.limite-cardOcupado(c);}
